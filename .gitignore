@@ -1,0 +1,54 @@
+# macOS
+.DS_Store
+
+# Node / React Native
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Metro / Watchman
+.metro-cache/
+.watchmanconfig
+
+# TypeScript
+*.tsbuildinfo
+
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+*.keystore
+*.jks
+
+# iOS is not used in the first stage, but ignore generated files if added later
+ios/Pods/
+ios/build/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Local databases and runtime data
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# ASR models - never commit model binaries
+models/
+*.onnx
+*.onnx.data
+tokens.txt
+*.bin
+*.m4a
+*.wav
+*.pcm
+
+# IDE
+.idea/
+.vscode/
