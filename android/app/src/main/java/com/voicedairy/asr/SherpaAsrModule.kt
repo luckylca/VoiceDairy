@@ -9,50 +9,85 @@ import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class SherpaAsrModule(private val reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
-    private var isRecording = false
-    private var startedAtMs = 0L
+    private val recorder = PcmRecorder(reactContext)
+    private val engine = SherpaAsrEngine()
+    private var initialized = false
 
     override fun getName(): String = "SherpaAsr"
 
     @ReactMethod
     fun init(options: ReadableMap, promise: Promise) {
-        emitState("idle", "ASR module placeholder initialized")
-        promise.resolve(null)
+        try {
+            val asrOptions = SherpaAsrOptions(
+                modelPath = options.getString("modelPath") ?: "",
+                tokensPath = options.getString("tokensPath") ?: "",
+                numThreads = if (options.hasKey("numThreads")) options.getInt("numThreads") else 2,
+                language = options.getString("language") ?: "auto",
+            )
+
+            engine.init(asrOptions)
+            initialized = true
+            emitState("idle", "ASR 模型路径检查通过")
+            promise.resolve(null)
+        } catch (error: Throwable) {
+            initialized = false
+            emitState("error", error.message)
+            promise.reject("ASR_INIT_FAILED", error.message, error)
+        }
     }
 
     @ReactMethod
     fun startRecord(promise: Promise) {
-        isRecording = true
-        startedAtMs = System.currentTimeMillis()
-        emitState("recording", "Recording placeholder started")
-        promise.resolve(null)
+        try {
+            recorder.start()
+            emitState("recording", "正在录音：16kHz mono PCM16")
+            promise.resolve(null)
+        } catch (error: Throwable) {
+            emitState("error", error.message)
+            promise.reject("ASR_RECORD_START_FAILED", error.message, error)
+        }
     }
 
     @ReactMethod
     fun stopRecord(promise: Promise) {
-        if (!isRecording) {
-            promise.reject("ASR_NOT_RECORDING", "startRecord must be called before stopRecord")
-            return
+        try {
+            val recordedPcm = recorder.stop()
+            emitState(
+                "recognizing",
+                "录音完成：${recordedPcm.durationMs}ms，${recordedPcm.byteCount} bytes，开始识别",
+            )
+
+            if (!initialized) {
+                throw IllegalStateException("ASR 尚未初始化。请先在设置中配置模型路径，并调用 SherpaAsr.init(options)")
+            }
+
+            val text = engine.transcribe(recordedPcm)
+            val result = Arguments.createMap().apply {
+                putString("text", text)
+                putDouble("durationMs", recordedPcm.durationMs.toDouble())
+            }
+
+            emitFinalText(text)
+            emitState("finished", "识别完成")
+            promise.resolve(result)
+        } catch (error: Throwable) {
+            emitState("error", error.message)
+            promise.reject("ASR_RECOGNIZE_FAILED", error.message, error)
         }
-
-        isRecording = false
-        emitState("recognizing", "Recognizing placeholder audio")
-
-        val result = Arguments.createMap().apply {
-            putString("text", "这是一个 ASR 原生模块占位识别文本。第二阶段接入 sherpa-onnx 后会返回真实转写结果。")
-            putDouble("durationMs", (System.currentTimeMillis() - startedAtMs).toDouble())
-        }
-
-        emitFinalText(result.getString("text") ?: "")
-        emitState("finished", "ASR placeholder finished")
-        promise.resolve(result)
     }
 
     @ReactMethod
     fun release(promise: Promise) {
-        isRecording = false
-        emitState("idle", "ASR resources released")
-        promise.resolve(null)
+        try {
+            recorder.release()
+            engine.release()
+            initialized = false
+            emitState("idle", "ASR resources released")
+            promise.resolve(null)
+        } catch (error: Throwable) {
+            emitState("error", error.message)
+            promise.reject("ASR_RELEASE_FAILED", error.message, error)
+        }
     }
 
     @ReactMethod
