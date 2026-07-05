@@ -45,13 +45,13 @@ export async function deleteEntry(entryId: string): Promise<void> {
 export async function toggleTodoDone(entryId: string): Promise<void> {
   const snapshot = await loadSnapshot();
   const now = new Date().toISOString();
-  const entries = snapshot.entries.map(entry => {
+  const entries: Entry[] = snapshot.entries.map(entry => {
     if (entry.id !== entryId) return entry;
     return {
       ...entry,
       status: entry.status === 'done' ? 'active' : 'done',
       updatedAt: now,
-      syncStatus: 'dirty' as const,
+      syncStatus: 'dirty',
     };
   });
 
