@@ -4,10 +4,6 @@ plugins {
     id 'com.facebook.react'
 }
 
-react {
-    autolinkLibrariesWithApp()
-}
-
 android {
     namespace 'com.voicedairy'
     compileSdk rootProject.ext.compileSdkVersion
