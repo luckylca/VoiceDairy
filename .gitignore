@@ -39,12 +39,7 @@ ios/build/
 *.db-shm
 *.db-wal
 
-# ASR models - never commit model binaries
-models/
-*.onnx
-*.onnx.data
-tokens.txt
-*.bin
+# Runtime audio captures - never commit user recordings
 *.m4a
 *.wav
 *.pcm
