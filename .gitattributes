@@ -1,0 +1,9 @@
+# ASR model and native runtime binaries should be stored with Git LFS.
+*.onnx filter=lfs diff=lfs merge=lfs -text
+*.onnx.data filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text
+models/** filter=lfs diff=lfs merge=lfs -text
+android/app/src/main/jniLibs/**/*.so filter=lfs diff=lfs merge=lfs -text
+
+# Keep token files as normal text so they can be reviewed in diffs.
+tokens.txt text eol=lf
