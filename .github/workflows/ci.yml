@@ -21,7 +21,7 @@ jobs:
           npm --version
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --silent
 
       - name: Run TypeScript check
-        run: npm run typecheck
+        run: npx tsc --noEmit --pretty false
