@@ -9,7 +9,7 @@
 - 原生层会把 PCM16 转换为 `FloatArray`；
 - Android 原生层已经接入 sherpa-onnx 离线识别调用链；
 - 当前默认模型类型是 SenseVoice；
-- 模型路径会检查 `model.int8.onnx` 和 `tokens.txt` 是否存在；
+- 模型路径会检查 `model.int8.onnx` 和词表文件是否存在；
 - JNI 库缺失时会明确提示 `libsherpa-onnx-jni.so` 未加载，不会返回假的识别文本。
 
 ## 模型目录
@@ -27,6 +27,15 @@ model.int8.onnx
 tokens.txt
 ```
 
+如果你希望把模型跟随仓库一起管理，可以把模型文件放到仓库内：
+
+```text
+models/sensevoice/model.int8.onnx
+models/sensevoice/tokens.txt
+```
+
+仓库已经配置 `.gitattributes`，`*.onnx`、`*.bin`、`android/app/src/main/jniLibs/**/*.so` 等大文件会走 Git LFS。
+
 ## JNI 库目录
 
 把 sherpa-onnx Android JNI 库放到：
@@ -42,8 +51,6 @@ android/app/src/main/jniLibs/armeabi-v7a/libsherpa-onnx-jni.so
 android/app/src/main/jniLibs/x86_64/libsherpa-onnx-jni.so
 ```
 
-注意：`.so` 文件体积较大，默认不提交到仓库。仓库只保留 `.gitkeep` 占位文件。
-
 ## 识别调用链
 
 核心位置：
@@ -57,7 +64,7 @@ android/app/src/main/java/com/voicedairy/asr/SherpaAsrEngine.kt
 ```text
 创建 OfflineRecognizerConfig
     ↓
-配置 SenseVoice 模型路径和 tokens 路径
+配置 SenseVoice 模型路径和词表路径
     ↓
 OfflineRecognizer(config)
     ↓
@@ -72,18 +79,24 @@ recognizer.getResult(stream).text
 释放 stream
 ```
 
-## 不提交到仓库的文件
+## 允许提交的 ASR 资产
 
-不要提交：
+可以通过 Git LFS 提交：
 
-- `model.int8.onnx`
-- `tokens.txt`
-- `libonnxruntime.so`
-- `libsherpa-onnx-jni.so`
-- 用户录音文件
-- API Key / WebDAV 密码
+- `models/sensevoice/model.int8.onnx`
+- `models/sensevoice/tokens.txt`
+- `android/app/src/main/jniLibs/arm64-v8a/libsherpa-onnx-jni.so`
 
-这些内容已经被 `.gitignore` 忽略。
+仍然不要提交用户录音、账号凭据、同步密码和其他个人隐私数据。
+
+## 本地提交模型文件
+
+```bash
+git lfs install
+git add .gitattributes .gitignore models/sensevoice/model.int8.onnx models/sensevoice/tokens.txt android/app/src/main/jniLibs/arm64-v8a/libsherpa-onnx-jni.so
+git commit -m "chore(asr): add SenseVoice model assets"
+git push
+```
 
 ## 本地调试建议
 
@@ -99,5 +112,5 @@ recognizer.getResult(stream).text
 ## 当前限制
 
 - GitHub Actions 只能验证编译，不能验证真机麦克风输入；
-- 仓库不提交模型文件和 JNI so，所以 CI 不会执行真实 ASR 推理；
-- 真机端到端测试需要你把模型和 so 放到本地后运行。
+- 我当前没有拿到真实模型二进制和 JNI so 文件，所以不能替你把实际文件内容提交到仓库；
+- 真机端到端测试需要模型、词表和 so 都存在。
