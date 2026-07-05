@@ -4,6 +4,9 @@ plugins {
     id 'com.facebook.react'
 }
 
+apply from: file('../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle')
+applyNativeModulesAppBuildGradle(project)
+
 android {
     namespace 'com.voicedairy'
     compileSdk rootProject.ext.compileSdkVersion
