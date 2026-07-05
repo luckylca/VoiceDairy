@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -e
+
+if command -v gradle >/dev/null 2>&1; then
+  exec gradle "$@"
+fi
+
+echo "Gradle wrapper jar is not committed in this bootstrap repository."
+echo "Install Gradle locally, or regenerate the wrapper with: gradle wrapper"
+exit 1
