@@ -5,3 +5,4 @@ quiet logs
 tsconfig fix
 android ci
 log artifact
+gradle 8.7
