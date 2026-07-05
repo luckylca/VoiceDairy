@@ -1,3 +1,4 @@
 action check
 rerun
 preinstalled node
+quiet logs
