@@ -25,3 +25,27 @@ jobs:
 
       - name: Run TypeScript check
         run: npx tsc --noEmit --pretty false
+
+  android-debug-build:
+    name: Android debug build
+    runs-on: ubuntu-latest
+    needs: npm-typecheck
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show Java, Node, npm and Gradle versions
+        run: |
+          java -version
+          node --version
+          npm --version
+          gradle --version
+
+      - name: Install dependencies
+        run: npm install --silent
+
+      - name: Build Android debug APK
+        run: |
+          cd android
+          gradle assembleDebug --no-daemon --stacktrace
