@@ -78,6 +78,21 @@ export function SettingsScreen() {
         />
 
         <Text variant="titleMedium" style={{ marginTop: 20, marginBottom: 8, fontWeight: '700' }}>
+          本地语音识别 ASR
+        </Text>
+        <Text variant="bodySmall" style={{ opacity: 0.72, marginBottom: 8 }}>
+          填写 SenseVoice 模型目录。目录下应包含 model.int8.onnx 和 tokens.txt。
+        </Text>
+        <TextInput
+          mode="outlined"
+          label="ASR 模型目录"
+          value={settings.asrModelPath ?? ''}
+          onChangeText={asrModelPath => patchSettings({ asrModelPath })}
+          autoCapitalize="none"
+          placeholder="/data/user/0/com.voicedairy/files/models/sensevoice"
+        />
+
+        <Text variant="titleMedium" style={{ marginTop: 20, marginBottom: 8, fontWeight: '700' }}>
           WebDAV
         </Text>
         <TextInput
