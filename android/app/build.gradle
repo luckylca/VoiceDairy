@@ -1,0 +1,34 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.facebook.react'
+}
+
+react {
+    autolinkLibrariesWithApp()
+}
+
+android {
+    namespace 'com.voicedairy'
+    compileSdk rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        applicationId 'com.voicedairy'
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName '0.1.0'
+    }
+}
+
+def hermesEnabled = project.hasProperty('hermesEnabled') ? project.hermesEnabled : 'true'
+
+dependencies {
+    implementation 'com.facebook.react:react-android'
+
+    if (hermesEnabled.toBoolean()) {
+        implementation 'com.facebook.react:hermes-android'
+    } else {
+        implementation 'org.webkit:android-jsc:+'
+    }
+}
