@@ -4,3 +4,4 @@ preinstalled node
 quiet logs
 tsconfig fix
 android ci
+log artifact
