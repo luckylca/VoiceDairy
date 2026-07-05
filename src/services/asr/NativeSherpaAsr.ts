@@ -26,16 +26,27 @@ type NativeSherpaAsrModule = {
 
 const nativeModule = NativeModules.SherpaAsr as NativeSherpaAsrModule | undefined;
 
-export const SherpaAsr = nativeModule ?? {
-  async init() {},
-  async startRecord() {},
-  async stopRecord() {
-    return {
-      text: '这是一个 ASR 模块未接入时的演示识别文本。',
-      durationMs: 0,
-    };
+function getNativeModule(): NativeSherpaAsrModule {
+  if (!nativeModule) {
+    throw new Error('SherpaAsr Native Module 未注册，请检查 Android 原生模块是否编译进 App');
+  }
+
+  return nativeModule;
+}
+
+export const SherpaAsr: NativeSherpaAsrModule = {
+  init(options) {
+    return getNativeModule().init(options);
   },
-  async release() {},
+  startRecord() {
+    return getNativeModule().startRecord();
+  },
+  stopRecord() {
+    return getNativeModule().stopRecord();
+  },
+  release() {
+    return getNativeModule().release();
+  },
 };
 
 export const SherpaAsrEvents = nativeModule ? new NativeEventEmitter(NativeModules.SherpaAsr) : null;
