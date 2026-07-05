@@ -9,3 +9,4 @@ gradle 8.7
 settings fix
 repositories fix
 autolink fix
+repo mode fix
