@@ -6,3 +6,4 @@ tsconfig fix
 android ci
 log artifact
 gradle 8.7
+settings fix
