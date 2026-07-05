@@ -1,16 +1,21 @@
 package com.voicedairy.asr
 
+import com.k2fsa.sherpa.onnx.FeatureConfig
+import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineRecognizer
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
 import java.io.File
 
 /**
- * Contract used by SherpaAsrModule after microphone audio has been recorded.
+ * Runs offline SenseVoice ASR through sherpa-onnx.
  *
- * The current repository does not commit sherpa-onnx JNI binaries or ONNX model
- * files. This class validates model paths and provides a single place to wire
- * sherpa-onnx OfflineRecognizer once the dependency and model assets are added.
+ * The app expects the model files to live in a private app directory and the JNI
+ * library to be packaged as android/app/src/main/jniLibs/<abi>/libsherpa-onnx-jni.so.
  */
 class SherpaAsrEngine {
     private var options: SherpaAsrOptions? = null
+    private var recognizer: OfflineRecognizer? = null
 
     fun init(options: SherpaAsrOptions) {
         val modelFile = File(options.modelPath)
@@ -24,35 +29,74 @@ class SherpaAsrEngine {
             throw IllegalArgumentException("ASR tokens 文件不存在：${options.tokensPath}")
         }
 
+        release()
+
+        val config = OfflineRecognizerConfig(
+            featConfig = FeatureConfig(
+                sampleRate = PcmRecorder.SAMPLE_RATE,
+                featureDim = 80,
+            ),
+            modelConfig = OfflineModelConfig(
+                senseVoice = OfflineSenseVoiceModelConfig(
+                    model = options.modelPath,
+                    language = normalizeSenseVoiceLanguage(options.language),
+                    useInverseTextNormalization = true,
+                ),
+                tokens = options.tokensPath,
+                numThreads = options.numThreads.coerceAtLeast(1),
+                debug = false,
+                provider = "cpu",
+                modelType = "sense-voice",
+            ),
+            decodingMethod = "greedy_search",
+        )
+
+        recognizer = try {
+            OfflineRecognizer(config = config)
+        } catch (error: UnsatisfiedLinkError) {
+            throw IllegalStateException(
+                "sherpa-onnx JNI 库未加载。请把 libsherpa-onnx-jni.so 放入 " +
+                    "android/app/src/main/jniLibs/arm64-v8a/ 后重新构建。原始错误：${error.message}",
+                error,
+            )
+        }
+
         this.options = options
     }
 
     fun transcribe(recordedPcm: RecordedPcm): String {
-        val currentOptions = options
+        val currentRecognizer = recognizer
             ?: throw IllegalStateException("ASR 尚未初始化，请先调用 SherpaAsr.init(options)")
 
         if (recordedPcm.samples.isEmpty()) {
             throw IllegalStateException("录音为空，没有可识别的 PCM 音频")
         }
 
-        // TODO: Wire sherpa-onnx here after adding its Android JNI package.
-        // Expected flow:
-        // 1. Create OfflineRecognizerConfig with sampleRate = recordedPcm.sampleRate.
-        // 2. Create SenseVoice model config using currentOptions.modelPath and currentOptions.tokensPath.
-        // 3. recognizer.createStream()
-        // 4. stream.acceptWaveform(recordedPcm.samples, recordedPcm.sampleRate)
-        // 5. recognizer.decode(stream)
-        // 6. recognizer.getResult(stream).text
-        // 7. release stream and recognizer resources.
-        throw UnsupportedOperationException(
-            "已完成真实 AudioRecord 录音，但 sherpa-onnx 推理尚未接入。" +
-                "模型：${currentOptions.modelPath}，tokens：${currentOptions.tokensPath}，" +
-                "音频：${recordedPcm.samples.size} samples / ${recordedPcm.sampleRate} Hz。",
-        )
+        val stream = currentRecognizer.createStream()
+        try {
+            stream.acceptWaveform(recordedPcm.samples, recordedPcm.sampleRate)
+            currentRecognizer.decode(stream)
+            return currentRecognizer.getResult(stream).text.trim()
+        } finally {
+            stream.release()
+        }
     }
 
     fun release() {
+        recognizer?.release()
+        recognizer = null
         options = null
+    }
+
+    private fun normalizeSenseVoiceLanguage(language: String): String {
+        return when (language.lowercase()) {
+            "zh", "chinese", "cmn" -> "zh"
+            "en", "english" -> "en"
+            "ja", "japanese" -> "ja"
+            "ko", "korean" -> "ko"
+            "yue", "cantonese" -> "yue"
+            else -> ""
+        }
     }
 }
 
