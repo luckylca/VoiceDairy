@@ -6,7 +6,7 @@ import type { AppSettings } from '../types/settings';
 import { loadSettings } from '../services/settings/SettingsService';
 import { organizeText } from '../services/llm/LlmService';
 import { saveOrganizedResult } from '../services/records/CreateRecordService';
-import { startVoiceRecord, stopVoiceRecord } from '../services/asr/AsrService';
+import { initAsr, startVoiceRecord, stopVoiceRecord } from '../services/asr/AsrService';
 
 export function VoiceInputScreen() {
   const navigation = useNavigation<any>();
@@ -15,18 +15,40 @@ export function VoiceInputScreen() {
   const [loading, setLoading] = useState(false);
   const [demoMode, setDemoMode] = useState(true);
   const [recording, setRecording] = useState(false);
+  const [asrReady, setAsrReady] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     loadSettings().then(setSettings);
   }, []);
 
+  async function ensureAsrReady() {
+    if (asrReady) {
+      return;
+    }
+
+    const modelDir = settings?.asrModelPath?.trim();
+    if (!modelDir) {
+      throw new Error('请先在设置页填写 ASR 模型目录，例如 /data/user/0/com.voicedairy/files/models/sensevoice');
+    }
+
+    await initAsr({
+      modelPath: `${modelDir}/model.int8.onnx`,
+      tokensPath: `${modelDir}/tokens.txt`,
+      numThreads: 2,
+      language: 'auto',
+    });
+
+    setAsrReady(true);
+  }
+
   async function handleToggleRecord() {
     try {
       if (!recording) {
+        await ensureAsrReady();
         await startVoiceRecord();
         setRecording(true);
-        setMessage('开始录音。当前第一阶段使用 ASR 占位实现。');
+        setMessage('开始录音：16kHz mono PCM16，本地录音不会传给 JS 层。');
         return;
       }
 
@@ -77,7 +99,7 @@ export function VoiceInputScreen() {
           快速记录
         </Text>
         <Text variant="bodyMedium" style={{ marginTop: 6, opacity: 0.72 }}>
-          第一阶段先跑通文本输入和大模型整理；语音按钮已经预留 Native ASR 接口。
+          语音按钮已经接入 Android AudioRecord 真实录音链路；sherpa-onnx 推理需要先放置模型和 JNI 依赖。
         </Text>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 20 }}>
@@ -111,7 +133,7 @@ export function VoiceInputScreen() {
         </Button>
       </ScrollView>
 
-      <Snackbar visible={Boolean(message)} onDismiss={() => setMessage('')} duration={2500}>
+      <Snackbar visible={Boolean(message)} onDismiss={() => setMessage('')} duration={3500}>
         {message}
       </Snackbar>
     </View>
