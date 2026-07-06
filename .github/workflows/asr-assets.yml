@@ -7,5 +7,12 @@ jobs:
   assets:
     runs-on: ubuntu-latest
     steps:
-      - name: Check
-        run: echo ASR assets workflow
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Prepare tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs bzip2 tar curl
+          git lfs install
