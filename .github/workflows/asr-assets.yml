@@ -1,12 +1,6 @@
 name: ASR Assets
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/asr-assets.yml
+on: [workflow_dispatch, pull_request]
 
 jobs:
   assets:
@@ -40,5 +34,3 @@ jobs:
         with:
           name: sensevoice-model
           path: models/sensevoice
-
-# rerun: 2026-07-06
