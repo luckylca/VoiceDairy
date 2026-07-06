@@ -1,0 +1,36 @@
+name: ASR Assets
+
+on: [workflow_dispatch, pull_request]
+
+jobs:
+  assets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Prepare tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs bzip2 tar curl gh
+          git lfs install
+
+      - name: Download SenseVoice model
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/voicedairy-asr
+          cd /tmp/voicedairy-asr
+          gh release download asr-models -R k2-fsa/sherpa-onnx -p 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2'
+          tar xjf sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2
+          mkdir -p "$GITHUB_WORKSPACE/models/sensevoice"
+          cp sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx "$GITHUB_WORKSPACE/models/sensevoice/model.int8.onnx"
+          cp sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt "$GITHUB_WORKSPACE/models/sensevoice/tokens.txt"
+
+      - name: Upload SenseVoice model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sensevoice-model
+          path: models/sensevoice
