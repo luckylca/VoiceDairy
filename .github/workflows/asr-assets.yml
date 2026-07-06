@@ -1,0 +1,11 @@
+name: ASR Assets
+
+on:
+  workflow_dispatch:
+
+jobs:
+  assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check
+        run: echo ASR assets workflow
