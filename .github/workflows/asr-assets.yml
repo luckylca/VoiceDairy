@@ -2,6 +2,11 @@ name: ASR Assets
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/asr-assets.yml
 
 jobs:
   assets:
