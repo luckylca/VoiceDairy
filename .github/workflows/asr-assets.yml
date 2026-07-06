@@ -40,3 +40,5 @@ jobs:
         with:
           name: sensevoice-model
           path: models/sensevoice
+
+# rerun: 2026-07-06
