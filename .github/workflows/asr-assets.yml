@@ -26,4 +26,12 @@ jobs:
           cd /tmp/voicedairy-asr
           gh release download asr-models -R k2-fsa/sherpa-onnx -p 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2'
           tar xjf sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2
-          ls -lh sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17
+          mkdir -p "$GITHUB_WORKSPACE/models/sensevoice"
+          cp sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx "$GITHUB_WORKSPACE/models/sensevoice/model.int8.onnx"
+          cp sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt "$GITHUB_WORKSPACE/models/sensevoice/tokens.txt"
+
+      - name: Upload SenseVoice model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sensevoice-model
+          path: models/sensevoice
