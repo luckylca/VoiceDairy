@@ -14,5 +14,16 @@ jobs:
       - name: Prepare tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y git-lfs bzip2 tar curl
+          sudo apt-get install -y git-lfs bzip2 tar curl gh
           git lfs install
+
+      - name: Download SenseVoice model
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/voicedairy-asr
+          cd /tmp/voicedairy-asr
+          gh release download asr-models -R k2-fsa/sherpa-onnx -p 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2'
+          tar xjf sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2
+          ls -lh sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17
