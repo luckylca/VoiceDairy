@@ -3,35 +3,38 @@
 set -e
 
 APP_HOME=$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)
-WRAPPER_DIR="$APP_HOME/gradle/wrapper"
-WRAPPER_JAR="$WRAPPER_DIR/gradle-wrapper.jar"
-WRAPPER_URL="https://services.gradle.org/distributions/gradle-8.7-wrapper.jar"
+GRADLE_VERSION="8.7"
+GRADLE_DIST_NAME="gradle-${GRADLE_VERSION}-bin.zip"
+GRADLE_DIST_URL="https://services.gradle.org/distributions/${GRADLE_DIST_NAME}"
+GRADLE_USER_HOME_DIR="${GRADLE_USER_HOME:-$HOME/.gradle}"
+GRADLE_BOOTSTRAP_DIR="$GRADLE_USER_HOME_DIR/voicedairy-wrapper/gradle-${GRADLE_VERSION}"
+GRADLE_HOME_DIR="$GRADLE_BOOTSTRAP_DIR/gradle-${GRADLE_VERSION}"
+GRADLE_BIN="$GRADLE_HOME_DIR/bin/gradle"
+ZIP_FILE="$GRADLE_BOOTSTRAP_DIR/${GRADLE_DIST_NAME}"
 
-if [ ! -f "$WRAPPER_JAR" ]; then
-  mkdir -p "$WRAPPER_DIR"
-  echo "Gradle wrapper jar not found. Downloading Gradle Wrapper 8.7..."
+if [ ! -x "$GRADLE_BIN" ]; then
+  mkdir -p "$GRADLE_BOOTSTRAP_DIR"
+  echo "Gradle ${GRADLE_VERSION} not found. Downloading ${GRADLE_DIST_NAME}..."
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fL --retry 3 --connect-timeout 15 -o "$WRAPPER_JAR.tmp" "$WRAPPER_URL"
+    if ! curl -fL --retry 3 --connect-timeout 15 -o "$ZIP_FILE.tmp" "$GRADLE_DIST_URL"; then
+      echo "Direct Gradle download failed. Retrying through http://127.0.0.1:7890 ..."
+      curl -fL --retry 3 --connect-timeout 15 --proxy http://127.0.0.1:7890 -o "$ZIP_FILE.tmp" "$GRADLE_DIST_URL"
+    fi
   elif command -v wget >/dev/null 2>&1; then
-    wget -O "$WRAPPER_JAR.tmp" "$WRAPPER_URL"
+    if ! wget -O "$ZIP_FILE.tmp" "$GRADLE_DIST_URL"; then
+      echo "Direct Gradle download failed. Retrying through http://127.0.0.1:7890 ..."
+      wget -e use_proxy=yes -e http_proxy=http://127.0.0.1:7890 -e https_proxy=http://127.0.0.1:7890 -O "$ZIP_FILE.tmp" "$GRADLE_DIST_URL"
+    fi
   else
-    echo "curl or wget is required to bootstrap the Gradle wrapper." >&2
+    echo "curl or wget is required to bootstrap Gradle ${GRADLE_VERSION}." >&2
     exit 1
   fi
 
-  mv "$WRAPPER_JAR.tmp" "$WRAPPER_JAR"
+  mv "$ZIP_FILE.tmp" "$ZIP_FILE"
+  rm -rf "$GRADLE_HOME_DIR"
+  unzip -q "$ZIP_FILE" -d "$GRADLE_BOOTSTRAP_DIR"
+  chmod +x "$GRADLE_BIN"
 fi
 
-if [ -n "$JAVA_HOME" ]; then
-  JAVA_EXE="$JAVA_HOME/bin/java"
-else
-  JAVA_EXE="java"
-fi
-
-if ! command -v "$JAVA_EXE" >/dev/null 2>&1 && [ ! -x "$JAVA_EXE" ]; then
-  echo "Java executable not found. Install JDK 17 and set JAVA_HOME." >&2
-  exit 1
-fi
-
-exec "$JAVA_EXE" -classpath "$WRAPPER_JAR" org.gradle.wrapper.GradleWrapperMain "$@"
+exec "$GRADLE_BIN" "$@"
