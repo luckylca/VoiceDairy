@@ -1,10 +1,37 @@
 #!/usr/bin/env sh
+
 set -e
 
-if command -v gradle >/dev/null 2>&1; then
-  exec gradle "$@"
+APP_HOME=$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)
+WRAPPER_DIR="$APP_HOME/gradle/wrapper"
+WRAPPER_JAR="$WRAPPER_DIR/gradle-wrapper.jar"
+WRAPPER_URL="https://services.gradle.org/distributions/gradle-8.7-wrapper.jar"
+
+if [ ! -f "$WRAPPER_JAR" ]; then
+  mkdir -p "$WRAPPER_DIR"
+  echo "Gradle wrapper jar not found. Downloading Gradle Wrapper 8.7..."
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --retry 3 --connect-timeout 15 -o "$WRAPPER_JAR.tmp" "$WRAPPER_URL"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "$WRAPPER_JAR.tmp" "$WRAPPER_URL"
+  else
+    echo "curl or wget is required to bootstrap the Gradle wrapper." >&2
+    exit 1
+  fi
+
+  mv "$WRAPPER_JAR.tmp" "$WRAPPER_JAR"
 fi
 
-echo "Gradle wrapper jar is not committed in this bootstrap repository."
-echo "Install Gradle locally, or regenerate the wrapper with: gradle wrapper"
-exit 1
+if [ -n "$JAVA_HOME" ]; then
+  JAVA_EXE="$JAVA_HOME/bin/java"
+else
+  JAVA_EXE="java"
+fi
+
+if ! command -v "$JAVA_EXE" >/dev/null 2>&1 && [ ! -x "$JAVA_EXE" ]; then
+  echo "Java executable not found. Install JDK 17 and set JAVA_HOME." >&2
+  exit 1
+fi
+
+exec "$JAVA_EXE" -classpath "$WRAPPER_JAR" org.gradle.wrapper.GradleWrapperMain "$@"
