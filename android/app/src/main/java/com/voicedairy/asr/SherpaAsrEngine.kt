@@ -1,5 +1,6 @@
 package com.voicedairy.asr
 
+import android.content.Context
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
@@ -10,23 +11,39 @@ import java.io.File
 /**
  * Runs offline SenseVoice ASR through sherpa-onnx.
  *
- * The app expects the model files to live in a private app directory and the JNI
- * library to be packaged as android/app/src/main/jniLibs/<abi>/libsherpa-onnx-jni.so.
+ * By default, the recognizer reads the model directly from Android assets:
+ *   models/sensevoice/model.int8.onnx
+ *   models/sensevoice/tokens.txt
+ *
+ * A custom filesystem model can still be supplied for development by passing
+ * both modelPath and tokensPath.
  */
-class SherpaAsrEngine {
+class SherpaAsrEngine(private val context: Context) {
     private var options: SherpaAsrOptions? = null
     private var recognizer: OfflineRecognizer? = null
 
     fun init(options: SherpaAsrOptions) {
-        val modelFile = File(options.modelPath)
-        val tokensFile = File(options.tokensPath)
+        val customModelPath = options.modelPath.trim()
+        val customTokensPath = options.tokensPath.trim()
+        val useBundledAssets = customModelPath.isEmpty() && customTokensPath.isEmpty()
 
-        if (!modelFile.exists()) {
-            throw IllegalArgumentException("ASR 模型文件不存在：${options.modelPath}")
+        if (!useBundledAssets && (customModelPath.isEmpty() || customTokensPath.isEmpty())) {
+            throw IllegalArgumentException("自定义 ASR 模型必须同时提供 modelPath 和 tokensPath")
         }
 
-        if (!tokensFile.exists()) {
-            throw IllegalArgumentException("ASR tokens 文件不存在：${options.tokensPath}")
+        val modelPath = if (useBundledAssets) BUNDLED_MODEL_ASSET else customModelPath
+        val tokensPath = if (useBundledAssets) BUNDLED_TOKENS_ASSET else customTokensPath
+
+        if (useBundledAssets) {
+            ensureAssetExists(modelPath)
+            ensureAssetExists(tokensPath)
+        } else {
+            if (!File(modelPath).isFile) {
+                throw IllegalArgumentException("ASR 模型文件不存在：$modelPath")
+            }
+            if (!File(tokensPath).isFile) {
+                throw IllegalArgumentException("ASR tokens 文件不存在：$tokensPath")
+            }
         }
 
         release()
@@ -38,11 +55,11 @@ class SherpaAsrEngine {
             ),
             modelConfig = OfflineModelConfig(
                 senseVoice = OfflineSenseVoiceModelConfig(
-                    model = options.modelPath,
+                    model = modelPath,
                     language = normalizeSenseVoiceLanguage(options.language),
                     useInverseTextNormalization = true,
                 ),
-                tokens = options.tokensPath,
+                tokens = tokensPath,
                 numThreads = options.numThreads.coerceAtLeast(1),
                 debug = false,
                 provider = "cpu",
@@ -52,16 +69,20 @@ class SherpaAsrEngine {
         )
 
         recognizer = try {
-            OfflineRecognizer(config = config)
+            if (useBundledAssets) {
+                OfflineRecognizer(assetManager = context.assets, config = config)
+            } else {
+                OfflineRecognizer(config = config)
+            }
         } catch (error: UnsatisfiedLinkError) {
             throw IllegalStateException(
-                "sherpa-onnx JNI 库未加载。请把 libsherpa-onnx-jni.so 放入 " +
-                    "android/app/src/main/jniLibs/arm64-v8a/ 后重新构建。原始错误：${error.message}",
+                "sherpa-onnx JNI 库未加载。请运行 npm run prepare:asr 后重新构建 Android App。" +
+                    "原始错误：${error.message}",
                 error,
             )
         }
 
-        this.options = options
+        this.options = options.copy(modelPath = modelPath, tokensPath = tokensPath)
     }
 
     fun transcribe(recordedPcm: RecordedPcm): String {
@@ -88,6 +109,17 @@ class SherpaAsrEngine {
         options = null
     }
 
+    private fun ensureAssetExists(assetPath: String) {
+        try {
+            context.assets.open(assetPath).use { }
+        } catch (error: Throwable) {
+            throw IllegalStateException(
+                "APK 中缺少 ASR 资产 $assetPath。请运行 npm run prepare:asr 后重新构建。",
+                error,
+            )
+        }
+    }
+
     private fun normalizeSenseVoiceLanguage(language: String): String {
         return when (language.lowercase()) {
             "zh", "chinese", "cmn" -> "zh"
@@ -98,11 +130,16 @@ class SherpaAsrEngine {
             else -> ""
         }
     }
+
+    companion object {
+        private const val BUNDLED_MODEL_ASSET = "models/sensevoice/model.int8.onnx"
+        private const val BUNDLED_TOKENS_ASSET = "models/sensevoice/tokens.txt"
+    }
 }
 
 data class SherpaAsrOptions(
-    val modelPath: String,
-    val tokensPath: String,
+    val modelPath: String = "",
+    val tokensPath: String = "",
     val numThreads: Int,
     val language: String,
 )
