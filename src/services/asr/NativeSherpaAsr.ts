@@ -1,10 +1,10 @@
-import { NativeModules, NativeEventEmitter } from 'react-native';
+import { NativeEventEmitter, NativeModules } from 'react-native';
 
 export type AsrInitOptions = {
-  modelPath: string;
-  tokensPath: string;
+  modelPath?: string;
+  tokensPath?: string;
   numThreads: number;
-  language: 'auto' | 'zh' | 'en' | 'yue';
+  language: 'auto' | 'zh' | 'en' | 'ja' | 'ko' | 'yue';
 };
 
 export type AsrResult = {
