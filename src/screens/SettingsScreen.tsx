@@ -80,17 +80,9 @@ export function SettingsScreen() {
         <Text variant="titleMedium" style={{ marginTop: 20, marginBottom: 8, fontWeight: '700' }}>
           本地语音识别 ASR
         </Text>
-        <Text variant="bodySmall" style={{ opacity: 0.72, marginBottom: 8 }}>
-          填写 SenseVoice 模型目录。目录下应包含 model.int8.onnx 和 tokens.txt。
+        <Text variant="bodyMedium" style={{ opacity: 0.72 }}>
+          SenseVoice INT8 模型和 sherpa-onnx JNI 会在 Android 构建前自动准备，并随 APK 安装。录音与转写均在手机本地完成，无需填写模型路径。
         </Text>
-        <TextInput
-          mode="outlined"
-          label="ASR 模型目录"
-          value={settings.asrModelPath ?? ''}
-          onChangeText={asrModelPath => patchSettings({ asrModelPath })}
-          autoCapitalize="none"
-          placeholder="/data/user/0/com.voicedairy/files/models/sensevoice"
-        />
 
         <Text variant="titleMedium" style={{ marginTop: 20, marginBottom: 8, fontWeight: '700' }}>
           WebDAV
