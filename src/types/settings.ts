@@ -8,7 +8,6 @@ export type AppSettings = {
   webdavUrl?: string;
   webdavUsername?: string;
   webdavPassword?: string;
-  asrModelPath?: string;
   themeMode: ThemeMode;
   colorSeed: string;
 };
