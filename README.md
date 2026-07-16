@@ -1,101 +1,98 @@
 # VoiceDairy - 语音想法整理助手
 
-VoiceDairy 是一个面向 Android 的 React Native CLI 应用。它用于把用户的口语化语音记录整理成结构化的个人知识和任务数据。
+VoiceDairy 是一个面向 Android 的 React Native CLI 应用，用来把随手说出的想法转成可编辑文本，再整理成待办、提醒、笔记、问题和项目记录等结构化内容。
 
-## 项目定位
+## 核心流程
 
-用户通过语音输入自己的想法，App 在手机端本地完成语音转文字，然后把转写后的文字发送给云端大模型 API。大模型根据预设提示词，把用户口语化表达自动整理成「想法」「待办」「提醒」「笔记」「问题」「项目记录」等结构化内容。整理后的数据按时间线存储在本地，并支持通过 WebDAV 同步到用户自己的云端空间。
+```text
+Android 麦克风
+    ↓ AudioRecord：16kHz mono PCM16
+SenseVoice Small INT8 + sherpa-onnx
+    ↓ 手机端离线语音转文字
+React Native 文本编辑
+    ↓ 演示规则或 OpenAI 兼容 API
+结构化 JSON
+    ↓
+本地时间线、分类、待办、提醒和搜索
+```
 
-项目核心目标：
+## 当前已实现
 
-- 快速语音记录
-- 本地离线语音识别
-- 大模型智能整理
-- 本地优先存储
-- WebDAV 自主同步
-- Material Design 3 风格界面
+- React Native CLI + TypeScript Android 应用；
+- Material Design 3 风格界面与底部导航；
+- Android `AudioRecord` 真实录音；
+- sherpa-onnx + SenseVoice Small INT8 本地离线识别；
+- 构建前自动下载模型和 arm64-v8a JNI 库；
+- 演示整理模式，无需 API Key 即可验证完整流程；
+- OpenAI 兼容 `/chat/completions` 接口；
+- 大模型 JSON 返回解析与类型校验；
+- 基于 AsyncStorage 的本地记录、条目和设置存储；
+- 时间线、分类、待办、提醒、搜索、设置等页面骨架；
+- JSON 快照生成，为后续 WebDAV 同步做准备。
+
+## 本地语音识别
+
+模型二进制不会直接提交到普通 Git 历史。第一次构建时，Gradle 会自动调用：
+
+```bash
+npm run prepare:asr
+```
+
+该脚本从 sherpa-onnx 官方发布页下载：
+
+- `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17`；
+- sherpa-onnx 1.13.4 Android arm64-v8a JNI 动态库。
+
+模型会安装到 Android assets，JNI 库会安装到 `jniLibs`。生成文件和下载缓存已加入 `.gitignore`，因此不会再次触发 GitHub 100 MB 单文件限制。
+
+App 使用 `AssetManager` 直接读取内置模型，用户不需要在设置页填写手机内部路径。录音和推理均在 Android 原生层完成，JavaScript 只接收最终文本和录音时长。
+
+## 图标修复
+
+项目使用 `react-native-paper` 和 MaterialCommunityIcons。Android 构建已通过 `react-native-vector-icons/fonts.gradle` 显式打包 `MaterialCommunityIcons.ttf`，底部导航和按钮图标不会再显示为方框或缺失字符。
+
+## 开始运行
+
+环境要求：Node.js 18+、JDK 17、Android SDK 34、Gradle 8.x，以及 `curl` 或 `wget`。
+
+```bash
+npm install
+chmod +x android/gradlew
+npm run android
+```
+
+首次构建需要下载模型与 JNI 库；准备完成后可以离线重新构建和离线转写。当前自动准备的原生库面向 arm64-v8a Android 真机。
+
+详细步骤见 [RUNNING.md](./RUNNING.md)，ASR 实现说明见 [docs/asr-integration.md](./docs/asr-integration.md)。
+
+## 使用方式
+
+1. 打开“记录”页；
+2. 点击“录音识别”，允许麦克风权限；
+3. 再次点击停止，等待本地转写结果进入文本框；
+4. 保持“演示整理模式”可直接测试结构化整理；
+5. 关闭演示模式前，在设置页填写 OpenAI 兼容 API 配置；
+6. 保存后可在时间线、分类、待办、提醒和搜索页面查看内容。
 
 ## 技术栈
 
-### App
-
-- React Native CLI
+- React Native 0.74
 - TypeScript
 - React Navigation
-- react-native-paper / 自定义 Material Design 3 组件
-- SQLite，本地优先存储
-- react-native-keychain / Android Keystore，保存敏感配置
-
-### Android 原生层
-
-- Kotlin
-- React Native Native Module
+- react-native-paper
+- react-native-vector-icons
+- Android Kotlin Native Module
 - Android AudioRecord
-- Android 本地通知
 - sherpa-onnx
-- SenseVoice-Small INT8
+- SenseVoice Small INT8
+- AsyncStorage
+- Zod
 
-### 云端能力
+## 后续计划
 
-- OpenAI 兼容 API
-- 自定义 Base URL
-- 自定义 API Key
-- 自定义模型名
-- 自定义提示词
-
-### 同步
-
-- WebDAV
-- JSON 快照同步
-- 第一阶段不直接同步 SQLite 数据库文件，避免数据库锁和文件损坏
-
-## 整体架构
-
-```text
-React Native UI
-    ↓ 语音按钮 / 文本编辑 / 时间线展示
-Android Kotlin Native Module
-    ↓ AudioRecord 采集 PCM 音频
-sherpa-onnx + SenseVoice-Small INT8 本地识别
-    ↓ 得到转写文字
-云端大模型 API
-    ↓ 解析结构化 JSON
-SQLite 本地存储
-    ↓ 时间线 / 分类 / 搜索 / 提醒
-WebDAV 同步 JSON 快照
-```
-
-## 开发阶段
-
-1. 文本输入 MVP：先跑通文本输入、大模型整理、JSON 校验、SQLite 保存、时间线展示、分类展示、设置页。
-2. Android 端侧语音识别：接入 Kotlin Native Module、AudioRecord、sherpa-onnx、SenseVoice-Small INT8。
-3. 待办和提醒：todo 完成状态、reminder 本地通知、过期提醒。
-4. WebDAV 同步：配置、测试连接、上传/下载 JSON 快照、合并和冲突处理。
-5. 体验优化：VAD 自动分句、热词修正、标签推荐、搜索、深色模式、导出、模型下载校验。
-
-## 开发原则
-
-- 不使用 Expo，使用 React Native CLI。
-- 先 Android，暂不做 iOS。
-- JS 层负责 UI 和业务逻辑。
-- Android 原生层负责录音和 ASR。
-- 不把 20ms 音频帧传给 JavaScript。
-- 先本地保存，再做同步。
-- 大模型返回必须做 JSON 校验。
-- API Key 和 WebDAV 密码不能明文写死。
-- 所有模块都要有清晰 TypeScript 类型。
-- 本地数据不能因为同步失败而丢失。
-
-## 当前仓库状态
-
-本仓库当前是项目初始化骨架，包含：
-
-- React Native CLI 基础配置
-- TypeScript 类型定义
-- 页面和导航占位
-- 大模型整理服务骨架
-- ASR Native Module JS/Kotlin 接口骨架
-- SQLite / WebDAV / 通知服务骨架
-- MVP 开发计划和提示词文档
-
-> 注意：模型文件、API Key、WebDAV 密码、SQLite 数据库文件不会提交到仓库。
+- 用 SQLite 替换当前 AsyncStorage 快照存储；
+- 完成本地通知和提醒调度；
+- 完成 WebDAV 上传、下载、合并和冲突处理；
+- 增加 VAD 自动分句、热词修正和识别状态展示；
+- 支持更多 Android ABI；
+- 优化模型体积、首次下载进度和失败重试体验。

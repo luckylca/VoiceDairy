@@ -7,6 +7,11 @@ plugins {
 apply from: file('../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle')
 applyNativeModulesAppBuildGradle(project)
 
+project.ext.vectoricons = [
+    iconFontNames: ['MaterialCommunityIcons.ttf']
+]
+apply from: file('../../node_modules/react-native-vector-icons/fonts.gradle')
+
 android {
     namespace 'com.voicedairy'
     compileSdk rootProject.ext.compileSdkVersion
@@ -18,6 +23,23 @@ android {
         versionCode 1
         versionName '0.1.0'
     }
+
+    androidResources {
+        noCompress += ['onnx']
+    }
+}
+
+def projectRootDir = rootProject.projectDir.parentFile
+
+tasks.register('prepareAsrAssets', Exec) {
+    group = 'voicedairy'
+    description = 'Downloads the SenseVoice model and sherpa-onnx Android JNI libraries when missing.'
+    workingDir projectRootDir
+    commandLine 'bash', new File(projectRootDir, 'scripts/prepare-asr-assets.sh').absolutePath
+}
+
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('prepareAsrAssets')
 }
 
 def hermesEnabled = project.hasProperty('hermesEnabled') ? project.hermesEnabled : 'true'

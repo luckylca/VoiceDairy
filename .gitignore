@@ -15,6 +15,11 @@ pnpm-debug.log*
 # TypeScript
 *.tsbuildinfo
 
+# VoiceDairy generated caches and ASR assets
+.cache/
+android/app/src/main/assets/models/sensevoice/
+android/app/src/main/jniLibs/**/*.so
+
 # Android
 android/.gradle/
 android/app/build/

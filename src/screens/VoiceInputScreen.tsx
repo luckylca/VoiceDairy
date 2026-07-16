@@ -27,14 +27,7 @@ export function VoiceInputScreen() {
       return;
     }
 
-    const modelDir = settings?.asrModelPath?.trim();
-    if (!modelDir) {
-      throw new Error('请先在设置页填写 ASR 模型目录，例如 /data/user/0/com.voicedairy/files/models/sensevoice');
-    }
-
     await initAsr({
-      modelPath: `${modelDir}/model.int8.onnx`,
-      tokensPath: `${modelDir}/tokens.txt`,
       numThreads: 2,
       language: 'auto',
     });
@@ -45,17 +38,18 @@ export function VoiceInputScreen() {
   async function handleToggleRecord() {
     try {
       if (!recording) {
+        setMessage('正在加载本地 SenseVoice 模型…');
         await ensureAsrReady();
         await startVoiceRecord();
         setRecording(true);
-        setMessage('开始录音：16kHz mono PCM16，本地录音不会传给 JS 层。');
+        setMessage('开始录音：16kHz mono PCM16，音频只在手机本地处理。');
         return;
       }
 
       const result = await stopVoiceRecord();
       setRecording(false);
       setText(result.text);
-      setMessage('已获取识别文本，可以继续编辑后整理。');
+      setMessage('本地识别完成，可以继续编辑并整理。');
     } catch (error) {
       setRecording(false);
       setMessage(error instanceof Error ? error.message : '录音失败');
@@ -99,7 +93,7 @@ export function VoiceInputScreen() {
           快速记录
         </Text>
         <Text variant="bodyMedium" style={{ marginTop: 6, opacity: 0.72 }}>
-          语音按钮已经接入 Android AudioRecord 真实录音链路；sherpa-onnx 推理需要先放置模型和 JNI 依赖。
+          语音会通过 Android AudioRecord 采集，并使用应用内置的 SenseVoice 模型在手机端离线转写。
         </Text>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 20 }}>
