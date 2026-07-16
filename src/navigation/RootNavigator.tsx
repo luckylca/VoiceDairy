@@ -5,6 +5,8 @@ import { BottomTabs } from './BottomTabs';
 import type { RootStackParamList } from './types';
 import { VoiceInputScreen } from '../screens/VoiceInputScreen';
 import { PromptSettingsScreen } from '../screens/PromptSettingsScreen';
+import { EntryDetailScreen } from '../screens/EntryDetailScreen';
+import { CategoryEntriesScreen } from '../screens/CategoryEntriesScreen';
 import { useAppTheme } from '../theme/AppThemeProvider';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -31,6 +33,7 @@ export function RootNavigator() {
     <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator
         screenOptions={{
+          animation: 'slide_from_right',
           headerShadowVisible: false,
           headerStyle: { backgroundColor: theme.colors.surface },
           headerTintColor: theme.colors.onSurface,
@@ -40,6 +43,8 @@ export function RootNavigator() {
         <Stack.Screen name="MainTabs" component={BottomTabs} options={{ headerShown: false }} />
         <Stack.Screen name="VoiceInput" component={VoiceInputScreen} options={{ title: '新建记录' }} />
         <Stack.Screen name="PromptSettings" component={PromptSettingsScreen} options={{ title: '整理提示词' }} />
+        <Stack.Screen name="EntryDetail" component={EntryDetailScreen} options={{ title: '笔记详情' }} />
+        <Stack.Screen name="CategoryEntries" component={CategoryEntriesScreen} options={{ title: '分类内容' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
