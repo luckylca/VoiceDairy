@@ -13,13 +13,18 @@ React Native 文本编辑
     ↓ 演示规则或 OpenAI 兼容 API
 结构化 JSON
     ↓
-本地时间线、分类、待办、提醒和搜索
+时间线搜索、分类统计与本地数据管理
 ```
 
 ## 当前已实现
 
 - React Native CLI + TypeScript Android 应用；
-- Material Design 3 风格界面与底部导航；
+- Material Design 3 风格界面；
+- 仅保留“时间线、分类、设置”三个一级 Tab；
+- 支持左右滑动切换三个 Tab；
+- 时间线顶部支持搜索标题、内容、标签和项目；
+- 录音页和提示词编辑页作为二级路由打开；
+- 支持跟随系统、浅色、深色模式和多套主题颜色；
 - Android `AudioRecord` 真实录音；
 - sherpa-onnx + SenseVoice Small INT8 本地离线识别；
 - 构建前自动下载模型和 arm64-v8a JNI 库；
@@ -27,8 +32,26 @@ React Native 文本编辑
 - OpenAI 兼容 `/chat/completions` 接口；
 - 大模型 JSON 返回解析与类型校验；
 - 基于 AsyncStorage 的本地记录、条目和设置存储；
-- 时间线、分类、待办、提醒、搜索、设置等页面骨架；
 - JSON 快照生成，为后续 WebDAV 同步做准备。
+
+## 界面结构
+
+```text
+主界面
+├── 时间线
+│   ├── 顶部搜索栏
+│   ├── 分组时间线
+│   └── 新建记录（二级页面）
+├── 分类
+│   └── 按想法、待办、提醒、笔记等类型统计
+└── 设置
+    ├── 明暗模式和主题颜色
+    ├── 大模型 API
+    ├── 整理提示词（二级页面）
+    ├── 本地 ASR 状态
+    ├── WebDAV
+    └── 数据操作
+```
 
 ## 本地语音识别
 
@@ -43,13 +66,9 @@ npm run prepare:asr
 - `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17`；
 - sherpa-onnx 1.13.4 Android arm64-v8a JNI 动态库。
 
-模型会安装到 Android assets，JNI 库会安装到 `jniLibs`。生成文件和下载缓存已加入 `.gitignore`，因此不会再次触发 GitHub 100 MB 单文件限制。
+模型会安装到 Android assets，JNI 库会安装到 `jniLibs`。生成文件和下载缓存已加入 `.gitignore`，因此不会触发 GitHub 100 MB 单文件限制。
 
-App 使用 `AssetManager` 直接读取内置模型，用户不需要在设置页填写手机内部路径。录音和推理均在 Android 原生层完成，JavaScript 只接收最终文本和录音时长。
-
-## 图标修复
-
-项目使用 `react-native-paper` 和 MaterialCommunityIcons。Android 构建已通过 `react-native-vector-icons/fonts.gradle` 显式打包 `MaterialCommunityIcons.ttf`，底部导航和按钮图标不会再显示为方框或缺失字符。
+App 使用 `AssetManager` 直接读取内置模型，用户不需要在设置页填写手机内部路径。录音和推理均在 Android 原生层完成，JavaScript 只接收最终文字和录音时长。
 
 ## 开始运行
 
@@ -67,12 +86,13 @@ npm run android
 
 ## 使用方式
 
-1. 打开“记录”页；
-2. 点击“录音识别”，允许麦克风权限；
-3. 再次点击停止，等待本地转写结果进入文本框；
-4. 保持“演示整理模式”可直接测试结构化整理；
-5. 关闭演示模式前，在设置页填写 OpenAI 兼容 API 配置；
-6. 保存后可在时间线、分类、待办、提醒和搜索页面查看内容。
+1. 在“时间线”点击右下角“记录”；
+2. 点击“开始录音”，允许麦克风权限；
+3. 停止录音后等待本地转写；
+4. 编辑文字并点击“智能整理并保存”；
+5. 回到时间线搜索或查看分组结果；
+6. 左右滑动进入“分类”或“设置”；
+7. 在设置中切换主题，或进入二级页面修改整理提示词。
 
 ## 技术栈
 
