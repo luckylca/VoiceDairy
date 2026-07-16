@@ -3,6 +3,7 @@ import type { AppSettings } from '../../types/settings';
 import { DEFAULT_SYSTEM_PROMPT } from '../llm/PromptBuilder';
 
 const SETTINGS_KEY = 'voicedairy.settings.v1';
+const listeners = new Set<(settings: AppSettings) => void>();
 
 export const defaultSettings: AppSettings = {
   apiBaseUrl: 'https://api.openai.com/v1',
@@ -31,4 +32,10 @@ export async function loadSettings(): Promise<AppSettings> {
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
   await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  listeners.forEach(listener => listener(settings));
+}
+
+export function subscribeSettings(listener: (settings: AppSettings) => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }

@@ -1,9 +1,11 @@
 export type RootTabParamList = {
   Home: undefined;
-  VoiceInput: undefined;
   Category: undefined;
-  Todo: undefined;
-  Reminder: undefined;
-  Search: undefined;
   Settings: undefined;
+};
+
+export type RootStackParamList = {
+  MainTabs: undefined;
+  VoiceInput: undefined;
+  PromptSettings: undefined;
 };
