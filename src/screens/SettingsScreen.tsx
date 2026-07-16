@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Button, Divider, Icon, SegmentedButtons, Text, TextInput, useTheme } from 'react-native-paper';
 import type { AppSettings, ThemeMode } from '../types/settings';
@@ -86,13 +86,13 @@ export function SettingsScreen() {
     });
   }
 
-  const cardStyle = [
+  const cardStyle: StyleProp<ViewStyle> = [
     styles.card,
     {
       backgroundColor: theme.colors.surface,
       borderColor: theme.colors.outlineVariant,
     },
-  ] as const;
+  ];
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
