@@ -4,6 +4,7 @@ import com.facebook.react.ReactPackage;
 import com.facebook.react.bridge.NativeModule;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.uimanager.ViewManager;
+import com.voicedairy.DisplayRefreshRateModule;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -14,6 +15,7 @@ public class SherpaAsrPackage implements ReactPackage {
     public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
         List<NativeModule> modules = new ArrayList<>();
         modules.add(new SherpaAsrModule(reactContext));
+        modules.add(new DisplayRefreshRateModule(reactContext));
         return modules;
     }
 
