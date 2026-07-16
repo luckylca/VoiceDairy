@@ -9,6 +9,78 @@ export type OrganizeTextOptions = {
   demoMode?: boolean;
 };
 
+function normalizeApiBaseUrl(value: string): string {
+  return value
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/chat\/completions$/i, '')
+    .replace(/\/models$/i, '');
+}
+
+function buildApiHeaders(apiKey: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const trimmedKey = apiKey.trim();
+  if (trimmedKey) {
+    headers.Authorization = `Bearer ${trimmedKey}`;
+  }
+  return headers;
+}
+
+function extractModelIds(payload: unknown): string[] {
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+
+  const record = payload as Record<string, unknown>;
+  const candidates = Array.isArray(record.data)
+    ? record.data
+    : Array.isArray(record.models)
+      ? record.models
+      : [];
+
+  const ids = candidates
+    .map(item => {
+      if (typeof item === 'string') {
+        return item.trim();
+      }
+      if (item && typeof item === 'object') {
+        const id = (item as Record<string, unknown>).id;
+        const name = (item as Record<string, unknown>).name;
+        if (typeof id === 'string') return id.trim();
+        if (typeof name === 'string') return name.trim();
+      }
+      return '';
+    })
+    .filter((id): id is string => Boolean(id));
+
+  return [...new Set(ids)].sort((left, right) => left.localeCompare(right));
+}
+
+export async function fetchAvailableModels(settings: AppSettings): Promise<string[]> {
+  const baseUrl = normalizeApiBaseUrl(settings.apiBaseUrl);
+  if (!baseUrl) {
+    throw new Error('请先填写 API Base URL');
+  }
+
+  const response = await fetch(`${baseUrl}/models`, {
+    method: 'GET',
+    headers: buildApiHeaders(settings.apiKey),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`获取模型列表失败：${response.status} ${message}`);
+  }
+
+  const models = extractModelIds(await response.json());
+  if (models.length === 0) {
+    throw new Error('接口返回成功，但没有找到可用模型');
+  }
+  return models;
+}
+
 function buildDemoResult(text: string): LlmOrganizeResult {
   const normalized = text.trim();
   const hasReminder = /提醒|明天|后天|下周|晚上|早上/.test(normalized);
@@ -39,12 +111,10 @@ export async function organizeText(options: OrganizeTextOptions): Promise<LlmOrg
     return buildDemoResult(text);
   }
 
-  const response = await fetch(`${settings.apiBaseUrl.replace(/\/$/, '')}/chat/completions`, {
+  const baseUrl = normalizeApiBaseUrl(settings.apiBaseUrl);
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${settings.apiKey}`,
-    },
+    headers: buildApiHeaders(settings.apiKey),
     body: JSON.stringify({
       model: settings.modelName,
       temperature: 0.2,
