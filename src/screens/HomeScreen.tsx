@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { SectionList, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { FAB, Searchbar, Surface, Text, useTheme } from 'react-native-paper';
+import { FAB, Searchbar, Text, useTheme } from 'react-native-paper';
 import type { Entry } from '../types/entry';
 import { entryTypeLabel } from '../types/entry';
 import { getTimelineGroup } from '../utils/date';
@@ -104,15 +104,14 @@ export function HomeScreen() {
       onPress={() => navigation.navigate('VoiceInput')}
       borderRadius={22}
       style={{ marginHorizontal: 16, marginTop: 16 }}
+      contentStyle={{
+        borderRadius: 22,
+        backgroundColor: theme.colors.surface,
+        borderWidth: 1,
+        borderColor: theme.colors.outlineVariant,
+      }}
     >
-      <Surface
-        elevation={1}
-        style={{
-          padding: 24,
-          borderRadius: 22,
-          backgroundColor: theme.colors.surface,
-        }}
-      >
+      <View style={{ padding: 24 }}>
         <Text variant="titleMedium" style={{ fontWeight: '900' }}>
           {query.trim() ? '没有匹配的内容' : '还没有记录'}
         </Text>
@@ -121,7 +120,7 @@ export function HomeScreen() {
             ? '点击这里新建记录，或清空搜索查看全部内容。'
             : '点击这里或右下角按钮，用语音或文字记录第一个想法。'}
         </Text>
-      </Surface>
+      </View>
     </MotionTouchable>
   );
 
@@ -159,9 +158,9 @@ export function HomeScreen() {
         stickySectionHeadersEnabled={false}
         removeClippedSubviews
         initialNumToRender={8}
-        maxToRenderPerBatch={8}
+        maxToRenderPerBatch={10}
         windowSize={7}
-        updateCellsBatchingPeriod={32}
+        updateCellsBatchingPeriod={16}
         showsVerticalScrollIndicator={false}
       />
 

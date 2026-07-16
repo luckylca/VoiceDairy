@@ -1,6 +1,6 @@
 import React from 'react';
 import { GestureResponderEvent, View } from 'react-native';
-import { Icon, IconButton, Surface, Text, useTheme } from 'react-native-paper';
+import { Icon, IconButton, Text, useTheme } from 'react-native-paper';
 import type { Entry } from '../types/entry';
 import { entryTypeIcon, entryTypeLabel } from '../types/entry';
 import { formatDateTime } from '../utils/date';
@@ -28,16 +28,15 @@ export function EntryCard({ entry, onPress, onToggleDone }: EntryCardProps) {
       onPress={onPress}
       borderRadius={22}
       accessibilityLabel={`打开${entry.title}`}
-      style={{ marginHorizontal: 16, marginVertical: 8 }}
+      style={{ marginHorizontal: 16, marginVertical: 7 }}
+      contentStyle={{
+        borderRadius: 22,
+        backgroundColor: theme.colors.surface,
+        borderWidth: 1,
+        borderColor: theme.colors.outlineVariant,
+      }}
     >
-      <Surface
-        elevation={1}
-        style={{
-          borderRadius: 22,
-          padding: 16,
-          backgroundColor: theme.colors.surface,
-        }}
-      >
+      <View style={{ padding: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View
             style={{
@@ -97,7 +96,7 @@ export function EntryCard({ entry, onPress, onToggleDone }: EntryCardProps) {
             ))}
           </View>
         ) : null}
-      </Surface>
+      </View>
     </MotionTouchable>
   );
 }

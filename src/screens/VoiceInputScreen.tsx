@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Button, HelperText, Surface, Switch, Text, TextInput, useTheme } from 'react-native-paper';
+import { Button, HelperText, Switch, Text, TextInput, useTheme } from 'react-native-paper';
 import type { AppSettings } from '../types/settings';
 import type { RecordSource } from '../types/record';
 import { loadSettings } from '../services/settings/SettingsService';
 import { organizeText } from '../services/llm/LlmService';
 import { saveOrganizedResult } from '../services/records/CreateRecordService';
 import { initAsr, startVoiceRecord, stopVoiceRecord } from '../services/asr/AsrService';
-import { MotionReveal } from '../components/MotionReveal';
+import { MotionTouchable } from '../components/MotionTouchable';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 
 export function VoiceInputScreen() {
@@ -70,7 +70,7 @@ export function VoiceInputScreen() {
         title: '本地识别完成',
         message: result.text ? '识别文本已经写入编辑框。' : '没有识别到清晰语音，请重试。',
         kind: result.text ? 'success' : 'warning',
-        icon: result.text ? 'text-to-speech' : 'microphone-question',
+        icon: result.text ? 'check-circle-outline' : 'microphone-outline',
       });
     } catch (error) {
       setRecording(false);
@@ -91,7 +91,7 @@ export function VoiceInputScreen() {
         title: '还没有可整理的内容',
         message: '请先录音或输入一段文字。',
         kind: 'warning',
-        icon: 'text-box-search-outline',
+        icon: 'magnify',
       });
       return;
     }
@@ -113,7 +113,7 @@ export function VoiceInputScreen() {
         title: '语音笔记已保存',
         message: `已整理为 ${result.items.length} 个可点击条目。`,
         kind: 'success',
-        icon: 'notebook-check-outline',
+        icon: 'check-circle-outline',
       });
       navigation.goBack();
     } catch (error) {
@@ -135,32 +135,49 @@ export function VoiceInputScreen() {
         keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
       >
-        <MotionReveal>
-          <Surface
-            elevation={1}
-            style={{ padding: 18, borderRadius: 22, backgroundColor: theme.colors.surface }}
+        <View
+          style={{
+            padding: 18,
+            borderRadius: 22,
+            backgroundColor: theme.colors.surface,
+            borderWidth: 1,
+            borderColor: theme.colors.outlineVariant,
+          }}
+        >
+          <Text variant="titleLarge" style={{ fontWeight: '900' }}>
+            说出你的想法
+          </Text>
+          <Text variant="bodyMedium" style={{ marginTop: 6, color: theme.colors.onSurfaceVariant }}>
+            使用内置 SenseVoice 模型离线转写，录音不会上传到云端。
+          </Text>
+          <Button
+            mode={recording ? 'outlined' : 'contained'}
+            icon={recording ? 'stop' : 'microphone-outline'}
+            contentStyle={{ height: 52 }}
+            style={{ marginTop: 18, borderRadius: 14 }}
+            rippleColor={theme.colors.primaryContainer}
+            onPress={handleToggleRecord}
           >
-            <Text variant="titleLarge" style={{ fontWeight: '900' }}>
-              说出你的想法
-            </Text>
-            <Text variant="bodyMedium" style={{ marginTop: 6, color: theme.colors.onSurfaceVariant }}>
-              使用内置 SenseVoice 模型离线转写，录音不会上传到云端。
-            </Text>
-            <Button
-              mode={recording ? 'outlined' : 'contained'}
-              icon={recording ? 'stop' : 'microphone-outline'}
-              contentStyle={{ height: 52 }}
-              style={{ marginTop: 18 }}
-              onPress={handleToggleRecord}
-            >
-              {recording ? '停止并识别' : '开始录音'}
-            </Button>
-          </Surface>
-        </MotionReveal>
+            {recording ? '停止并识别' : '开始录音'}
+          </Button>
+        </View>
 
-        <MotionReveal delay={45}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 18 }}>
-            <Switch value={demoMode} onValueChange={setDemoMode} />
+        <MotionTouchable
+          onPress={() => setDemoMode(value => !value)}
+          borderRadius={18}
+          style={{ marginTop: 16 }}
+          contentStyle={{
+            borderRadius: 18,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            backgroundColor: theme.colors.surfaceVariant,
+          }}
+          accessibilityLabel={demoMode ? '关闭演示整理模式' : '开启演示整理模式'}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View pointerEvents="none">
+              <Switch value={demoMode} />
+            </View>
             <View style={{ marginLeft: 10, flex: 1 }}>
               <Text variant="titleSmall">演示整理模式</Text>
               <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
@@ -168,39 +185,36 @@ export function VoiceInputScreen() {
               </Text>
             </View>
           </View>
-        </MotionReveal>
+        </MotionTouchable>
 
-        <MotionReveal delay={80}>
-          <TextInput
-            mode="outlined"
-            label="识别文本或手动输入"
-            value={text}
-            onChangeText={value => {
-              setText(value);
-              if (!value.trim()) setInputSource('text');
-            }}
-            multiline
-            numberOfLines={9}
-            textAlignVertical="top"
-            style={{ marginTop: 18, minHeight: 220 }}
-            placeholder="例如：这个周末整理 RoboMaster 弹道检测参数，并把 WebDAV 同步方案写进项目文档。"
-          />
-          <HelperText type="info">关闭演示模式前，请先在设置中填写 API 地址、密钥和模型名。</HelperText>
-        </MotionReveal>
+        <TextInput
+          mode="outlined"
+          label="识别文本或手动输入"
+          value={text}
+          onChangeText={value => {
+            setText(value);
+            if (!value.trim()) setInputSource('text');
+          }}
+          multiline
+          numberOfLines={9}
+          textAlignVertical="top"
+          style={{ marginTop: 18, minHeight: 220 }}
+          placeholder="例如：这个周末整理 RoboMaster 弹道检测参数，并把 WebDAV 同步方案写进项目文档。"
+        />
+        <HelperText type="info">关闭演示模式前，请先在设置中填写 API 地址、密钥和模型名。</HelperText>
 
-        <MotionReveal delay={115}>
-          <Button
-            mode="contained"
-            icon="auto-fix"
-            loading={loading}
-            disabled={loading || !settings}
-            onPress={handleOrganize}
-            contentStyle={{ height: 52 }}
-            style={{ marginTop: 12 }}
-          >
-            智能整理并保存
-          </Button>
-        </MotionReveal>
+        <Button
+          mode="contained"
+          icon="auto-fix"
+          loading={loading}
+          disabled={loading || !settings}
+          onPress={handleOrganize}
+          rippleColor={theme.colors.primaryContainer}
+          contentStyle={{ height: 52 }}
+          style={{ marginTop: 12, borderRadius: 14 }}
+        >
+          智能整理并保存
+        </Button>
       </ScrollView>
     </View>
   );

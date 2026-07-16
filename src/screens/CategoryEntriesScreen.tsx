@@ -2,7 +2,7 @@ import React, { useCallback, useLayoutEffect, useState } from 'react';
 import { FlatList, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Surface, Text, useTheme } from 'react-native-paper';
+import { Text, useTheme } from 'react-native-paper';
 import type { RootStackParamList } from '../navigation/types';
 import type { Entry } from '../types/entry';
 import { entryTypeLabel } from '../types/entry';
@@ -70,24 +70,29 @@ export function CategoryEntriesScreen({ route, navigation }: Props) {
             onPress={() => navigation.navigate('VoiceInput')}
             borderRadius={22}
             style={{ marginHorizontal: 16, marginTop: 12 }}
+            contentStyle={{
+              borderRadius: 22,
+              padding: 24,
+              backgroundColor: theme.colors.surface,
+              borderWidth: 1,
+              borderColor: theme.colors.outlineVariant,
+            }}
           >
-            <Surface
-              elevation={1}
-              style={{ padding: 24, borderRadius: 22, backgroundColor: theme.colors.surface }}
-            >
+            <View>
               <Text variant="titleMedium" style={{ fontWeight: '900' }}>
                 这个分类还没有内容
               </Text>
               <Text variant="bodyMedium" style={{ marginTop: 8, color: theme.colors.onSurfaceVariant }}>
-                点击这里新建记录。即使分类为空，卡片仍会保留完整的水波和缩放反馈。
+                点击这里新建记录。即使分类为空，也会显示与卡片外形一致的原生水波反馈。
               </Text>
-            </Surface>
+            </View>
           </MotionTouchable>
         }
         contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
         removeClippedSubviews
         initialNumToRender={8}
-        maxToRenderPerBatch={8}
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={16}
         windowSize={7}
         showsVerticalScrollIndicator={false}
       />
