@@ -6,6 +6,11 @@ export async function listEntries(): Promise<Entry[]> {
   return [...snapshot.entries].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+export async function getEntryById(entryId: string): Promise<Entry | null> {
+  const snapshot = await loadSnapshot();
+  return snapshot.entries.find(item => item.id === entryId) ?? null;
+}
+
 export async function listEntriesByType(type: EntryType): Promise<Entry[]> {
   const entries = await listEntries();
   return entries.filter(item => item.type === type);
