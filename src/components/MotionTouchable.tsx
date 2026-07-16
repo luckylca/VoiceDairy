@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
-import { Animated, StyleProp, View, ViewStyle } from 'react-native';
-import { TouchableRipple, useTheme } from 'react-native-paper';
+import { Animated, Pressable, StyleProp, ViewStyle } from 'react-native';
+import { useTheme } from 'react-native-paper';
 
 function withAlpha(color: string, alpha: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(color) ? `${color}${alpha}` : color;
@@ -14,6 +14,7 @@ type MotionTouchableProps = {
   contentStyle?: StyleProp<ViewStyle>;
   borderRadius?: number;
   accessibilityLabel?: string;
+  rippleColor?: string;
 };
 
 export function MotionTouchable({
@@ -24,33 +25,44 @@ export function MotionTouchable({
   contentStyle,
   borderRadius = 20,
   accessibilityLabel,
+  rippleColor,
 }: MotionTouchableProps) {
   const theme = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
 
-  function animate(toValue: number) {
-    Animated.spring(scale, {
+  function animate(toValue: number, duration: number) {
+    scale.stopAnimation();
+    Animated.timing(scale, {
       toValue,
-      speed: 45,
-      bounciness: 0,
+      duration,
       useNativeDriver: true,
     }).start();
   }
 
   return (
-    <Animated.View style={[style, { transform: [{ scale }] }]}> 
-      <TouchableRipple
+    <Animated.View style={[style, { transform: [{ scale }] }]}>
+      <Pressable
         onPress={onPress}
-        onPressIn={() => animate(0.985)}
-        onPressOut={() => animate(1)}
-        disabled={disabled}
-        borderless={false}
-        rippleColor={withAlpha(theme.colors.primary, '24')}
+        onPressIn={() => animate(0.992, 55)}
+        onPressOut={() => animate(1, 95)}
+        disabled={disabled || !onPress}
+        accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
-        style={[{ borderRadius, overflow: 'hidden' }, contentStyle]}
+        android_ripple={{
+          color: rippleColor ?? withAlpha(theme.colors.primary, '2E'),
+          borderless: false,
+          foreground: true,
+        }}
+        style={[
+          {
+            borderRadius,
+            overflow: 'hidden',
+          },
+          contentStyle,
+        ]}
       >
-        <View>{children}</View>
-      </TouchableRipple>
+        {children}
+      </Pressable>
     </Animated.View>
   );
 }
