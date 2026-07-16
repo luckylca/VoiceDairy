@@ -1,14 +1,36 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Button, Divider, Icon, SegmentedButtons, Text, TextInput, useTheme } from 'react-native-paper';
+import {
+  Button,
+  Dialog,
+  Divider,
+  Icon,
+  Portal,
+  RadioButton,
+  Searchbar,
+  SegmentedButtons,
+  Text,
+  TextInput,
+  useTheme,
+} from 'react-native-paper';
 import type { AppSettings, ThemeMode } from '../types/settings';
 import { defaultSettings, loadSettings, saveSettings } from '../services/settings/SettingsService';
 import { clearLocalDatabase } from '../services/database/Database';
 import { buildJsonSnapshot } from '../services/sync/SyncService';
+import { fetchAvailableModels } from '../services/llm/LlmService';
+import {
+  getDisplayRefreshRateInfo,
+  requestHighDisplayRefreshRate,
+  type DisplayRefreshRateInfo,
+} from '../services/display/DisplayRefreshRate';
 import { THEME_PRESETS, useAppTheme } from '../theme/AppThemeProvider';
 import { MotionTouchable } from '../components/MotionTouchable';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
+
+function formatHz(rate: number): string {
+  return Math.abs(rate - Math.round(rate)) < 0.05 ? `${Math.round(rate)}Hz` : `${rate.toFixed(1)}Hz`;
+}
 
 export function SettingsScreen() {
   const navigation = useNavigation<any>();
@@ -16,12 +38,36 @@ export function SettingsScreen() {
   const { setThemeMode, setColorSeed } = useAppTheme();
   const { showNotification } = useFluidNotification();
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [modelQuery, setModelQuery] = useState('');
+  const [modelDialogVisible, setModelDialogVisible] = useState(false);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [refreshInfo, setRefreshInfo] = useState<DisplayRefreshRateInfo | null>(null);
+  const [requestingRefresh, setRequestingRefresh] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
-      loadSettings().then(setSettings);
+      let active = true;
+      loadSettings().then(current => {
+        if (active) setSettings(current);
+      });
+      getDisplayRefreshRateInfo()
+        .then(info => {
+          if (active) setRefreshInfo(info);
+        })
+        .catch(() => undefined);
+
+      return () => {
+        active = false;
+      };
     }, []),
   );
+
+  const filteredModels = useMemo(() => {
+    const keyword = modelQuery.trim().toLowerCase();
+    if (!keyword) return availableModels;
+    return availableModels.filter(model => model.toLowerCase().includes(keyword));
+  }, [availableModels, modelQuery]);
 
   function patchSettings(patch: Partial<AppSettings>) {
     setSettings(previous => ({ ...previous, ...patch }));
@@ -54,6 +100,52 @@ export function SettingsScreen() {
       kind: 'success',
       icon: 'palette-outline',
     });
+  }
+
+  async function handleRequestHighRefresh() {
+    setRequestingRefresh(true);
+    try {
+      const info = await requestHighDisplayRefreshRate();
+      setRefreshInfo(info);
+      showNotification({
+        title: info.systemAcceptedHighRefresh ? '高刷新率已启用' : '系统仍未切换到最高刷新率',
+        message: `当前 ${formatHz(info.currentRate)}，设备最高 ${formatHz(info.maxSupportedRate)}。`,
+        kind: info.systemAcceptedHighRefresh ? 'success' : 'warning',
+        icon: info.systemAcceptedHighRefresh ? 'check-circle-outline' : 'alert-outline',
+      });
+    } catch (error) {
+      showNotification({
+        title: '高刷新率请求失败',
+        message: error instanceof Error ? error.message : '无法读取当前显示模式。',
+        kind: 'error',
+      });
+    } finally {
+      setRequestingRefresh(false);
+    }
+  }
+
+  async function handleFetchModels() {
+    setLoadingModels(true);
+    try {
+      const models = await fetchAvailableModels(settings);
+      setAvailableModels(models);
+      setModelQuery('');
+      setModelDialogVisible(true);
+      showNotification({
+        title: '模型列表获取成功',
+        message: `接口返回了 ${models.length} 个模型。`,
+        kind: 'success',
+        icon: 'database-check-outline',
+      });
+    } catch (error) {
+      showNotification({
+        title: '获取模型列表失败',
+        message: error instanceof Error ? error.message : '请检查 API 地址和密钥。',
+        kind: 'error',
+      });
+    } finally {
+      setLoadingModels(false);
+    }
   }
 
   async function handleSave() {
@@ -164,6 +256,48 @@ export function SettingsScreen() {
               );
             })}
           </View>
+
+          <Divider style={{ marginTop: 20, marginBottom: 16 }} />
+          <View style={styles.settingRow}>
+            <View style={[styles.rowIcon, { backgroundColor: theme.colors.secondaryContainer }]}>
+              <Icon source="speedometer" size={23} color={theme.colors.onSecondaryContainer} />
+            </View>
+            <View style={styles.rowText}>
+              <Text variant="titleMedium" style={{ fontWeight: '800' }}>
+                显示刷新率
+              </Text>
+              <Text
+                variant="bodySmall"
+                style={{
+                  marginTop: 2,
+                  color:
+                    refreshInfo && !refreshInfo.systemAcceptedHighRefresh
+                      ? theme.colors.error
+                      : theme.colors.onSurfaceVariant,
+                }}
+              >
+                {refreshInfo
+                  ? `当前 ${formatHz(refreshInfo.currentRate)} · 最高 ${formatHz(refreshInfo.maxSupportedRate)}`
+                  : '正在读取设备显示模式…'}
+              </Text>
+              {refreshInfo ? (
+                <Text variant="labelSmall" style={{ marginTop: 3, color: theme.colors.onSurfaceVariant }}>
+                  支持：{refreshInfo.supportedRates.map(formatHz).join(' / ')}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+          <Button
+            mode="outlined"
+            icon="refresh"
+            loading={requestingRefresh}
+            disabled={requestingRefresh}
+            onPress={handleRequestHighRefresh}
+            style={{ marginTop: 14, borderRadius: 14 }}
+            contentStyle={styles.actionButtonContent}
+          >
+            重新请求最高刷新率
+          </Button>
         </View>
 
         <View style={cardStyle}>
@@ -195,6 +329,17 @@ export function SettingsScreen() {
             autoCapitalize="none"
             style={{ marginTop: 12 }}
           />
+          <Button
+            mode="outlined"
+            icon="database-search-outline"
+            loading={loadingModels}
+            disabled={loadingModels || !settings.apiBaseUrl.trim()}
+            onPress={handleFetchModels}
+            style={{ marginTop: 12, borderRadius: 14 }}
+            contentStyle={styles.actionButtonContent}
+          >
+            获取模型列表
+          </Button>
 
           <Divider style={{ marginTop: 18, marginBottom: 8 }} />
           <MotionTouchable
@@ -231,7 +376,7 @@ export function SettingsScreen() {
                 title: '本地语音识别已就绪',
                 message: 'SenseVoice INT8 在手机端离线处理，不会上传录音。',
                 kind: 'success',
-                icon: 'microphone-check',
+                icon: 'check-circle-outline',
               })
             }
             borderRadius={16}
@@ -244,7 +389,7 @@ export function SettingsScreen() {
           >
             <View style={styles.settingRow}>
               <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}>
-                <Icon source="microphone-check" size={23} color={theme.colors.onTertiaryContainer} />
+                <Icon source="microphone-outline" size={23} color={theme.colors.onTertiaryContainer} />
               </View>
               <View style={styles.rowText}>
                 <Text variant="titleMedium" style={{ fontWeight: '800' }}>
@@ -323,6 +468,45 @@ export function SettingsScreen() {
           </Button>
         </View>
       </ScrollView>
+
+      <Portal>
+        <Dialog visible={modelDialogVisible} onDismiss={() => setModelDialogVisible(false)}>
+          <Dialog.Title>选择模型</Dialog.Title>
+          <Dialog.Content>
+            <Searchbar
+              placeholder="搜索模型名"
+              value={modelQuery}
+              onChangeText={setModelQuery}
+              elevation={0}
+            />
+          </Dialog.Content>
+          <Dialog.ScrollArea style={{ maxHeight: 390 }}>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {filteredModels.length > 0 ? (
+                filteredModels.map(model => (
+                  <RadioButton.Item
+                    key={model}
+                    label={model}
+                    value={model}
+                    status={settings.modelName === model ? 'checked' : 'unchecked'}
+                    onPress={() => {
+                      patchSettings({ modelName: model });
+                      setModelDialogVisible(false);
+                    }}
+                  />
+                ))
+              ) : (
+                <Text variant="bodyMedium" style={{ padding: 20, color: theme.colors.onSurfaceVariant }}>
+                  没有匹配的模型。
+                </Text>
+              )}
+            </ScrollView>
+          </Dialog.ScrollArea>
+          <Dialog.Actions>
+            <Button onPress={() => setModelDialogVisible(false)}>关闭</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </View>
   );
 }
