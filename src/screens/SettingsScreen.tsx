@@ -5,28 +5,27 @@ import {
   Button,
   Divider,
   Icon,
-  List,
   SegmentedButtons,
-  Snackbar,
   Surface,
   Text,
   TextInput,
-  TouchableRipple,
   useTheme,
 } from 'react-native-paper';
 import type { AppSettings, ThemeMode } from '../types/settings';
 import { defaultSettings, loadSettings, saveSettings } from '../services/settings/SettingsService';
 import { clearLocalDatabase } from '../services/database/Database';
 import { buildJsonSnapshot } from '../services/sync/SyncService';
-import { SwipeableTabScreen } from '../components/SwipeableTabScreen';
 import { THEME_PRESETS, useAppTheme } from '../theme/AppThemeProvider';
+import { MotionReveal } from '../components/MotionReveal';
+import { MotionTouchable } from '../components/MotionTouchable';
+import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 
 export function SettingsScreen() {
   const navigation = useNavigation<any>();
   const theme = useTheme();
   const { setThemeMode, setColorSeed } = useAppTheme();
+  const { showNotification } = useFluidNotification();
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-  const [message, setMessage] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -42,46 +41,83 @@ export function SettingsScreen() {
     const themeMode = value as ThemeMode;
     patchSettings({ themeMode });
     await setThemeMode(themeMode);
+    const labels: Record<ThemeMode, string> = {
+      system: '跟随系统',
+      light: '浅色模式',
+      dark: '深色模式',
+    };
+    showNotification({
+      title: `已切换为${labels[themeMode]}`,
+      message: '动画和界面颜色已经立即更新。',
+      kind: 'success',
+      icon: themeMode === 'dark' ? 'weather-night' : themeMode === 'light' ? 'white-balance-sunny' : 'theme-light-dark',
+    });
   }
 
   async function handleColorChange(colorSeed: string) {
     patchSettings({ colorSeed });
     await setColorSeed(colorSeed);
+    const preset = THEME_PRESETS.find(item => item.seed.toLowerCase() === colorSeed.toLowerCase());
+    showNotification({
+      title: `已应用${preset?.label ?? '新'}主题`,
+      message: '主题色已保存，重启应用后仍会保留。',
+      kind: 'success',
+      icon: 'palette-outline',
+    });
   }
 
   async function handleSave() {
     await saveSettings(settings);
-    setMessage('设置已保存。');
+    showNotification({
+      title: '设置已保存',
+      message: 'API、WebDAV 与界面配置已写入本地。',
+      kind: 'success',
+      icon: 'content-save-check-outline',
+    });
   }
 
   async function handleExport() {
     const snapshot = await buildJsonSnapshot();
-    setMessage(`已生成 JSON 快照，长度 ${snapshot.length} 字符。`);
+    showNotification({
+      title: 'JSON 快照已生成',
+      message: `共 ${snapshot.length} 个字符。`,
+      kind: 'success',
+      icon: 'code-json',
+    });
   }
 
   async function handleClear() {
     await clearLocalDatabase();
-    setMessage('本地数据已清空。');
+    showNotification({
+      title: '本地数据已清空',
+      message: '时间线和分类统计将在返回后刷新。',
+      kind: 'warning',
+      icon: 'delete-sweep-outline',
+    });
   }
 
   const cardStyle = {
-    marginTop: 16,
     padding: 16,
-    borderRadius: 20,
+    borderRadius: 22,
     backgroundColor: theme.colors.surface,
   } as const;
 
   return (
-    <SwipeableTabScreen routeName="Settings">
-      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-        <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 20, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-          <Text variant="headlineMedium" style={{ fontWeight: '900' }}>
-            设置
-          </Text>
-          <Text variant="bodyMedium" style={{ marginTop: 4, color: theme.colors.onSurfaceVariant }}>
-            管理外观、智能整理、本地识别和数据同步。
-          </Text>
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingTop: 20, paddingBottom: 44 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text variant="headlineMedium" style={{ fontWeight: '900' }}>
+          设置
+        </Text>
+        <Text variant="bodyMedium" style={{ marginTop: 4, color: theme.colors.onSurfaceVariant }}>
+          管理外观、智能整理、本地识别和数据同步。
+        </Text>
 
+        <MotionReveal delay={0} style={styles.sectionSpacing}>
           <Surface elevation={1} style={cardStyle}>
             <Text variant="titleMedium" style={styles.sectionTitle}>
               外观主题
@@ -104,11 +140,13 @@ export function SettingsScreen() {
               {THEME_PRESETS.map(preset => {
                 const selected = settings.colorSeed.toLowerCase() === preset.seed.toLowerCase();
                 return (
-                  <TouchableRipple
+                  <MotionTouchable
                     key={preset.seed}
                     onPress={() => handleColorChange(preset.seed)}
-                    borderless
+                    borderRadius={16}
                     style={styles.paletteItem}
+                    contentStyle={{ paddingVertical: 7 }}
+                    accessibilityLabel={`切换到${preset.label}主题`}
                   >
                     <View style={{ alignItems: 'center' }}>
                       <View
@@ -124,12 +162,14 @@ export function SettingsScreen() {
                         {preset.label}
                       </Text>
                     </View>
-                  </TouchableRipple>
+                  </MotionTouchable>
                 );
               })}
             </View>
           </Surface>
+        </MotionReveal>
 
+        <MotionReveal delay={45} style={styles.sectionSpacing}>
           <Surface elevation={1} style={cardStyle}>
             <Text variant="titleMedium" style={styles.sectionTitle}>
               智能整理
@@ -160,26 +200,63 @@ export function SettingsScreen() {
               style={{ marginTop: 12 }}
             />
 
-            <Divider style={{ marginTop: 18 }} />
-            <List.Item
-              title="整理提示词"
-              description="在独立页面中编辑结构化整理规则"
-              left={props => <List.Icon {...props} icon="text-box-edit-outline" />}
-              right={props => <List.Icon {...props} icon="chevron-right" />}
+            <Divider style={{ marginTop: 18, marginBottom: 4 }} />
+            <MotionTouchable
               onPress={() => navigation.navigate('PromptSettings')}
-              style={{ paddingHorizontal: 0 }}
-            />
+              borderRadius={16}
+              contentStyle={{ paddingVertical: 12, paddingHorizontal: 4 }}
+            >
+              <View style={styles.settingRow}>
+                <View style={[styles.rowIcon, { backgroundColor: theme.colors.primaryContainer }]}>
+                  <Icon source="text-box-edit-outline" size={23} color={theme.colors.onPrimaryContainer} />
+                </View>
+                <View style={styles.rowText}>
+                  <Text variant="titleMedium" style={{ fontWeight: '800' }}>
+                    整理提示词
+                  </Text>
+                  <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
+                    在独立页面中编辑结构化整理规则
+                  </Text>
+                </View>
+                <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
+              </View>
+            </MotionTouchable>
           </Surface>
+        </MotionReveal>
 
+        <MotionReveal delay={90} style={styles.sectionSpacing}>
           <Surface elevation={1} style={cardStyle}>
-            <List.Item
-              title="本地语音识别"
-              description="SenseVoice INT8 · 手机端离线处理 · 无需填写模型路径"
-              left={props => <List.Icon {...props} icon="microphone-check" />}
-              style={{ paddingHorizontal: 0 }}
-            />
+            <MotionTouchable
+              onPress={() =>
+                showNotification({
+                  title: '本地语音识别已就绪',
+                  message: 'SenseVoice INT8 在手机端离线处理，不会上传录音。',
+                  kind: 'success',
+                  icon: 'microphone-check',
+                })
+              }
+              borderRadius={16}
+              contentStyle={{ paddingVertical: 4 }}
+            >
+              <View style={styles.settingRow}>
+                <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}>
+                  <Icon source="microphone-check" size={23} color={theme.colors.onTertiaryContainer} />
+                </View>
+                <View style={styles.rowText}>
+                  <Text variant="titleMedium" style={{ fontWeight: '800' }}>
+                    本地语音识别
+                  </Text>
+                  <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
+                    SenseVoice INT8 · 手机端离线处理
+                  </Text>
+                </View>
+                <Icon source="information-outline" size={21} color={theme.colors.onSurfaceVariant} />
+              </View>
+            </MotionTouchable>
           </Surface>
+        </MotionReveal>
 
+        <MotionReveal delay={135} style={styles.sectionSpacing}>
           <Surface elevation={1} style={cardStyle}>
             <Text variant="titleMedium" style={styles.sectionTitle}>
               WebDAV
@@ -209,32 +286,39 @@ export function SettingsScreen() {
               style={{ marginTop: 12 }}
             />
           </Surface>
+        </MotionReveal>
 
+        <MotionReveal delay={180} style={styles.sectionSpacing}>
           <Surface elevation={1} style={cardStyle}>
             <Text variant="titleMedium" style={styles.sectionTitle}>
               数据
             </Text>
-            <Button mode="contained" onPress={handleSave} style={{ marginTop: 14 }}>
+            <Button mode="contained" icon="content-save-outline" onPress={handleSave} style={{ marginTop: 14 }}>
               保存设置
             </Button>
             <Button mode="outlined" icon="code-json" onPress={handleExport} style={{ marginTop: 12 }}>
               生成 JSON 快照
             </Button>
-            <Button mode="outlined" icon="delete-outline" textColor={theme.colors.error} onPress={handleClear} style={{ marginTop: 12 }}>
+            <Button
+              mode="outlined"
+              icon="delete-outline"
+              textColor={theme.colors.error}
+              onPress={handleClear}
+              style={{ marginTop: 12 }}
+            >
               清空本地数据
             </Button>
           </Surface>
-        </ScrollView>
-
-        <Snackbar visible={Boolean(message)} onDismiss={() => setMessage('')} duration={2500}>
-          {message}
-        </Snackbar>
-      </View>
-    </SwipeableTabScreen>
+        </MotionReveal>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  sectionSpacing: {
+    marginTop: 16,
+  },
   sectionTitle: {
     fontWeight: '800',
   },
@@ -246,8 +330,6 @@ const styles = StyleSheet.create({
   paletteItem: {
     width: '19%',
     minWidth: 58,
-    paddingVertical: 6,
-    borderRadius: 14,
   },
   colorSwatch: {
     width: 42,
@@ -255,5 +337,22 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  rowIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowText: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 12,
+    marginRight: 8,
   },
 });
