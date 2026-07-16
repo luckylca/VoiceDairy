@@ -1,19 +1,29 @@
 import React from 'react';
-import { StatusBar, useColorScheme } from 'react-native';
-import { MD3DarkTheme, MD3LightTheme, PaperProvider } from 'react-native-paper';
+import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from '../navigation/RootNavigator';
+import { AppThemeProvider, useAppTheme } from '../theme/AppThemeProvider';
 
-export default function App() {
-  const scheme = useColorScheme();
-  const theme = scheme === 'dark' ? MD3DarkTheme : MD3LightTheme;
+function AppContent() {
+  const { theme, isDark } = useAppTheme();
 
   return (
+    <>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.colors.background}
+      />
+      <RootNavigator />
+    </>
+  );
+}
+
+export default function App() {
+  return (
     <SafeAreaProvider>
-      <PaperProvider theme={theme}>
-        <StatusBar barStyle={scheme === 'dark' ? 'light-content' : 'dark-content'} />
-        <RootNavigator />
-      </PaperProvider>
+      <AppThemeProvider>
+        <AppContent />
+      </AppThemeProvider>
     </SafeAreaProvider>
   );
 }
