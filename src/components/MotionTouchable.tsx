@@ -33,6 +33,7 @@ export function MotionTouchable({
 }: MotionTouchableProps) {
   const theme = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
+  const longPressed = useRef(false);
 
   function animate(toValue: number, duration: number) {
     scale.stopAnimation();
@@ -46,10 +47,19 @@ export function MotionTouchable({
   return (
     <Animated.View style={[style, { transform: [{ scale }] }]}>
       <Pressable
-        onPress={onPress}
-        onLongPress={onLongPress}
+        onPress={() => {
+          if (!longPressed.current) onPress?.();
+          longPressed.current = false;
+        }}
+        onLongPress={() => {
+          longPressed.current = true;
+          onLongPress?.();
+        }}
         delayLongPress={delayLongPress}
-        onPressIn={() => animate(0.992, 55)}
+        onPressIn={() => {
+          longPressed.current = false;
+          animate(0.992, 55);
+        }}
         onPressOut={() => animate(1, 95)}
         disabled={disabled || (!onPress && !onLongPress)}
         accessibilityRole="button"
