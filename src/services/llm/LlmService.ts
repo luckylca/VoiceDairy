@@ -2,6 +2,7 @@ import type { AppSettings } from '../../types/settings';
 import type { LlmOrganizeResult } from '../../types/llm';
 import { buildSystemPrompt, buildUserPrompt } from './PromptBuilder';
 import { parseAndValidateLlmJson } from './JsonRepair';
+import { organizeTextLocally } from './LocalModelService';
 
 export type OrganizeTextOptions = {
   text: string;
@@ -113,11 +114,12 @@ function buildDemoResult(text: string): LlmOrganizeResult {
   };
 }
 
-export async function organizeText(options: OrganizeTextOptions): Promise<LlmOrganizeResult> {
-  const { text, settings, demoMode } = options;
-
-  if (demoMode || !settings.apiKey || !settings.apiBaseUrl || !settings.modelName) {
-    return buildDemoResult(text);
+async function organizeTextWithCloud(
+  text: string,
+  settings: AppSettings,
+): Promise<LlmOrganizeResult> {
+  if (!settings.apiBaseUrl.trim() || !settings.modelName.trim()) {
+    throw new Error('请先在设置中填写云端 API 地址和模型名');
   }
 
   const baseUrl = normalizeApiBaseUrl(settings.apiBaseUrl);
@@ -152,6 +154,17 @@ export async function organizeText(options: OrganizeTextOptions): Promise<LlmOrg
   if (typeof content !== 'string') {
     throw new Error('大模型返回格式异常：缺少 message.content');
   }
-
   return parseAndValidateLlmJson(content);
+}
+
+export async function organizeText(options: OrganizeTextOptions): Promise<LlmOrganizeResult> {
+  const { text, settings, demoMode } = options;
+
+  if (demoMode) {
+    return buildDemoResult(text);
+  }
+  if (settings.organizerProvider === 'local') {
+    return organizeTextLocally(text, settings);
+  }
+  return organizeTextWithCloud(text, settings);
 }
