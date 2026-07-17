@@ -10,6 +10,7 @@ export type RootStackParamList = {
   MainTabs: undefined;
   VoiceInput: undefined;
   PromptSettings: undefined;
+  LocalModelSettings: undefined;
   CategorySettings: undefined;
   ProjectSettings: undefined;
   ProjectDetail: { projectId: string };
