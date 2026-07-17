@@ -5,6 +5,7 @@ import { Icon, Text, useTheme } from 'react-native-paper';
 import type { Entry } from '../types/entry';
 import type { CategorySetting, ConfigurableCategoryType } from '../types/category';
 import { listEntries } from '../services/database/EntryRepository';
+import { listProjects } from '../services/database/ProjectRepository';
 import { loadCategorySettings } from '../services/settings/CategorySettingsService';
 import { MotionTouchable } from '../components/MotionTouchable';
 
@@ -13,13 +14,17 @@ export function CategoryScreen() {
   const theme = useTheme();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [categories, setCategories] = useState<CategorySetting[]>([]);
+  const [managedProjectCount, setManagedProjectCount] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
-      Promise.all([listEntries(), loadCategorySettings()]).then(([nextEntries, nextCategories]) => {
-        setEntries(nextEntries);
-        setCategories(nextCategories);
-      });
+      Promise.all([listEntries(), loadCategorySettings(), listProjects()]).then(
+        ([nextEntries, nextCategories, nextProjects]) => {
+          setEntries(nextEntries);
+          setCategories(nextCategories);
+          setManagedProjectCount(nextProjects.length);
+        },
+      );
     }, []),
   );
 
@@ -32,8 +37,11 @@ export function CategoryScreen() {
         result.set(type, (result.get(type) ?? 0) + 1);
       }
     });
+
+    // “项目设置”中的项目保存在独立 projects 集合中，项目进度分类需要同时统计它们。
+    result.set('project', (result.get('project') ?? 0) + managedProjectCount);
     return result;
-  }, [categories, entries]);
+  }, [categories, entries, managedProjectCount]);
 
   return (
     <FlatList
@@ -61,7 +69,7 @@ export function CategoryScreen() {
             <MotionTouchable
               onPress={() => navigation.navigate('CategoryEntries', { type: category.type })}
               borderRadius={22}
-              accessibilityLabel={`打开${category.label}分类，共${count}个条目`}
+              accessibilityLabel={`打开${category.label}分类，共${count}个内容`}
               contentStyle={{
                 minHeight: 154,
                 borderRadius: 22,
@@ -101,7 +109,7 @@ export function CategoryScreen() {
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
                   <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, flex: 1 }}>
-                    {count} 个条目
+                    {count} 个内容
                   </Text>
                   <Icon source="chevron-right" size={20} color={theme.colors.onSurfaceVariant} />
                 </View>
