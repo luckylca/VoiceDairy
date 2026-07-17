@@ -3,6 +3,7 @@ import type { AppSettings } from '../../types/settings';
 import { DEFAULT_SYSTEM_PROMPT } from '../llm/PromptBuilder';
 
 const SETTINGS_KEY = 'voicedairy.settings.v1';
+const LEGACY_DEFAULT_CATEGORY_SIGNATURE = 'idea、todo、reminder、note、journal、question、project、unknown';
 const listeners = new Set<(settings: AppSettings) => void>();
 
 export const defaultSettings: AppSettings = {
@@ -21,9 +22,17 @@ export async function loadSettings(): Promise<AppSettings> {
   }
 
   try {
+    const saved = JSON.parse(raw) as Partial<AppSettings>;
+    const systemPrompt =
+      typeof saved.systemPrompt === 'string' &&
+      saved.systemPrompt.includes(LEGACY_DEFAULT_CATEGORY_SIGNATURE)
+        ? DEFAULT_SYSTEM_PROMPT
+        : saved.systemPrompt;
+
     return {
       ...defaultSettings,
-      ...JSON.parse(raw),
+      ...saved,
+      systemPrompt: systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     };
   } catch {
     return defaultSettings;

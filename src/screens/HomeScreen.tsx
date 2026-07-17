@@ -1,11 +1,13 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { SectionList, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { FAB, Searchbar, Text, useTheme } from 'react-native-paper';
+import { Button, Dialog, FAB, Portal, Searchbar, Text, useTheme } from 'react-native-paper';
 import type { Entry } from '../types/entry';
 import { entryTypeLabel } from '../types/entry';
+import type { CategorySetting, ConfigurableCategoryType } from '../types/category';
 import { getTimelineGroup } from '../utils/date';
-import { listEntries, toggleTodoDone } from '../services/database/EntryRepository';
+import { deleteEntry, listEntries, toggleTodoDone } from '../services/database/EntryRepository';
+import { loadCategorySettings } from '../services/settings/CategorySettingsService';
 import { EntryCard } from '../components/EntryCard';
 import { MotionTouchable } from '../components/MotionTouchable';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
@@ -17,21 +19,42 @@ type TimelineSectionData = {
   data: Entry[];
 };
 
+function isConfigurableCategory(type: string): type is ConfigurableCategoryType {
+  return type === 'idea' || type === 'todo' || type === 'project' || type === 'reminder';
+}
+
 export function HomeScreen() {
   const navigation = useNavigation<any>();
   const theme = useTheme();
   const { showNotification } = useFluidNotification();
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [categorySettings, setCategorySettings] = useState<CategorySetting[]>([]);
   const [query, setQuery] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Entry | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const refresh = useCallback(async () => {
-    setEntries(await listEntries());
+    const [nextEntries, nextCategories] = await Promise.all([listEntries(), loadCategorySettings()]);
+    setEntries(nextEntries);
+    setCategorySettings(nextCategories);
   }, []);
 
   useFocusEffect(
     useCallback(() => {
       refresh();
     }, [refresh]),
+  );
+
+  const categoryLabels = useMemo(() => {
+    return new Map(categorySettings.map(item => [item.type, item.label]));
+  }, [categorySettings]);
+
+  const labelForEntry = useCallback(
+    (entry: Entry) =>
+      isConfigurableCategory(entry.type)
+        ? categoryLabels.get(entry.type) ?? entryTypeLabel[entry.type]
+        : entryTypeLabel[entry.type],
+    [categoryLabels],
   );
 
   const filteredEntries = useMemo(() => {
@@ -46,13 +69,13 @@ export function HomeScreen() {
         entry.content,
         entry.project ?? '',
         entry.tags.join(' '),
-        entryTypeLabel[entry.type],
+        labelForEntry(entry),
       ]
         .join(' ')
         .toLowerCase();
       return searchableText.includes(keyword);
     });
-  }, [entries, query]);
+  }, [entries, labelForEntry, query]);
 
   const sections = useMemo<TimelineSectionData[]>(
     () =>
@@ -74,6 +97,25 @@ export function HomeScreen() {
       kind: 'success',
       icon: entry.status === 'done' ? 'restore' : 'check-bold',
     });
+  }
+
+  async function handleDeleteEntry() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteEntry(deleteTarget.id);
+      const deletedTitle = deleteTarget.title;
+      setDeleteTarget(null);
+      await refresh();
+      showNotification({
+        title: '笔记已删除',
+        message: deletedTitle,
+        kind: 'success',
+        icon: 'delete-outline',
+      });
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function openEntry(entry: Entry) {
@@ -132,7 +174,9 @@ export function HomeScreen() {
         renderItem={({ item }) => (
           <EntryCard
             entry={item}
+            typeLabel={labelForEntry(item)}
             onPress={() => openEntry(item)}
+            onLongPress={() => setDeleteTarget(item)}
             onToggleDone={item.type === 'todo' ? () => handleToggleDone(item) : undefined}
           />
         )}
@@ -170,6 +214,26 @@ export function HomeScreen() {
         onPress={() => navigation.navigate('VoiceInput')}
         style={{ position: 'absolute', right: 20, bottom: 20 }}
       />
+
+      <Portal>
+        <Dialog visible={Boolean(deleteTarget)} onDismiss={() => !deleting && setDeleteTarget(null)}>
+          <Dialog.Icon icon="delete-outline" />
+          <Dialog.Title>删除这条笔记？</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium">
+              {deleteTarget ? `“${deleteTarget.title}”删除后无法恢复。` : ''}
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button disabled={deleting} onPress={() => setDeleteTarget(null)}>
+              取消
+            </Button>
+            <Button loading={deleting} textColor={theme.colors.error} onPress={handleDeleteEntry}>
+              删除
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </View>
   );
 }

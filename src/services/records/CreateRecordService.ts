@@ -27,23 +27,26 @@ export async function saveOrganizedResult(params: {
     syncStatus: 'dirty',
   };
 
-  const entries: Entry[] = params.result.items.map(item => ({
-    id: createId('entry'),
-    recordId,
-    type: item.type,
-    title: item.title || '未命名条目',
-    content: item.content || params.rawText,
-    datetime: item.datetime,
-    dueDate: item.due_date,
-    priority: item.priority,
-    tags: item.tags ?? [],
-    project: item.project,
-    status: 'active',
-    confidence: item.confidence,
-    createdAt: now,
-    updatedAt: now,
-    syncStatus: 'dirty',
-  }));
+  const entries: Entry[] = params.result.items.map(item => {
+    const isReminder = item.type === 'reminder';
+    return {
+      id: createId('entry'),
+      recordId,
+      type: item.type,
+      title: item.title || '未命名条目',
+      content: item.content || params.rawText,
+      datetime: isReminder ? item.datetime : null,
+      dueDate: isReminder ? item.due_date : null,
+      priority: item.priority,
+      tags: item.tags ?? [],
+      project: item.project,
+      status: 'active',
+      confidence: item.confidence,
+      createdAt: now,
+      updatedAt: now,
+      syncStatus: 'dirty',
+    };
+  });
 
   await upsertRecord(record);
   await upsertEntries(entries);

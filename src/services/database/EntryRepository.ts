@@ -41,9 +41,18 @@ export async function updateEntry(entry: Entry): Promise<void> {
 
 export async function deleteEntry(entryId: string): Promise<void> {
   const snapshot = await loadSnapshot();
+  const target = snapshot.entries.find(item => item.id === entryId);
+  if (!target) return;
+
+  const entries = snapshot.entries.filter(item => item.id !== entryId);
+  const recordStillUsed = entries.some(item => item.recordId === target.recordId);
+
   await saveSnapshot({
     ...snapshot,
-    entries: snapshot.entries.filter(item => item.id !== entryId),
+    entries,
+    records: recordStillUsed
+      ? snapshot.records
+      : snapshot.records.filter(record => record.id !== target.recordId),
   });
 }
 

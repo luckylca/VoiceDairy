@@ -9,6 +9,8 @@ function withAlpha(color: string, alpha: string): string {
 type MotionTouchableProps = {
   children: React.ReactNode;
   onPress?: () => void;
+  onLongPress?: () => void;
+  delayLongPress?: number;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
@@ -20,6 +22,8 @@ type MotionTouchableProps = {
 export function MotionTouchable({
   children,
   onPress,
+  onLongPress,
+  delayLongPress = 450,
   disabled = false,
   style,
   contentStyle,
@@ -29,6 +33,7 @@ export function MotionTouchable({
 }: MotionTouchableProps) {
   const theme = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
+  const longPressed = useRef(false);
 
   function animate(toValue: number, duration: number) {
     scale.stopAnimation();
@@ -42,10 +47,21 @@ export function MotionTouchable({
   return (
     <Animated.View style={[style, { transform: [{ scale }] }]}>
       <Pressable
-        onPress={onPress}
-        onPressIn={() => animate(0.992, 55)}
+        onPress={() => {
+          if (!longPressed.current) onPress?.();
+          longPressed.current = false;
+        }}
+        onLongPress={() => {
+          longPressed.current = true;
+          onLongPress?.();
+        }}
+        delayLongPress={delayLongPress}
+        onPressIn={() => {
+          longPressed.current = false;
+          animate(0.992, 55);
+        }}
         onPressOut={() => animate(1, 95)}
-        disabled={disabled || !onPress}
+        disabled={disabled || (!onPress && !onLongPress)}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         android_ripple={{
