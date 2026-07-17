@@ -83,21 +83,30 @@ export async function fetchAvailableModels(settings: AppSettings): Promise<strin
 
 function buildDemoResult(text: string): LlmOrganizeResult {
   const normalized = text.trim();
-  const hasReminder = /提醒|明天|后天|下周|晚上|早上/.test(normalized);
+  const hasReminder = /提醒|明天|后天|下周|晚上|早上|点钟|日期/.test(normalized);
+  const hasProject = /项目|版本|进度|里程碑|需求/.test(normalized);
   const hasTodo = /要|需要|记得|完成|整理|修改|做/.test(normalized);
+  const type = hasReminder ? 'reminder' : hasProject ? 'project' : hasTodo ? 'todo' : 'idea';
 
   return {
     summary: normalized.length > 32 ? `${normalized.slice(0, 32)}…` : normalized || '演示整理结果',
     items: [
       {
-        type: hasReminder ? 'reminder' : hasTodo ? 'todo' : 'note',
-        title: hasTodo ? '待处理事项' : '语音笔记',
+        type,
+        title:
+          type === 'reminder'
+            ? '待提醒事项'
+            : type === 'project'
+              ? '项目进度'
+              : type === 'todo'
+                ? '待处理事项'
+                : '新的想法',
         content: normalized || '这是一条演示内容。',
         datetime: null,
         due_date: null,
         priority: 'normal',
         tags: ['语音记录'],
-        project: null,
+        project: type === 'project' ? '未命名项目' : null,
         confidence: 0.72,
       },
     ],
