@@ -5,8 +5,9 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Text, useTheme } from 'react-native-paper';
 import type { RootStackParamList } from '../navigation/types';
 import type { Entry } from '../types/entry';
-import { entryTypeLabel } from '../types/entry';
+import type { CategorySetting } from '../types/category';
 import { listEntriesByType, toggleTodoDone } from '../services/database/EntryRepository';
+import { loadCategorySettings } from '../services/settings/CategorySettingsService';
 import { EntryCard } from '../components/EntryCard';
 import { MotionTouchable } from '../components/MotionTouchable';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
@@ -18,9 +19,15 @@ export function CategoryEntriesScreen({ route, navigation }: Props) {
   const { showNotification } = useFluidNotification();
   const { type } = route.params;
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [category, setCategory] = useState<CategorySetting | null>(null);
 
   const refresh = useCallback(async () => {
-    setEntries(await listEntriesByType(type));
+    const [nextEntries, categories] = await Promise.all([
+      listEntriesByType(type),
+      loadCategorySettings(),
+    ]);
+    setEntries(nextEntries);
+    setCategory(categories.find(item => item.type === type) ?? null);
   }, [type]);
 
   useFocusEffect(
@@ -30,8 +37,8 @@ export function CategoryEntriesScreen({ route, navigation }: Props) {
   );
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: entryTypeLabel[type] });
-  }, [navigation, type]);
+    navigation.setOptions({ title: category?.label ?? '分类内容' });
+  }, [category?.label, navigation]);
 
   async function handleToggleDone(entry: Entry) {
     await toggleTodoDone(entry.id);
@@ -51,6 +58,7 @@ export function CategoryEntriesScreen({ route, navigation }: Props) {
         renderItem={({ item }) => (
           <EntryCard
             entry={item}
+            typeLabel={category?.label}
             onPress={() => navigation.navigate('EntryDetail', { entryId: item.id })}
             onToggleDone={item.type === 'todo' ? () => handleToggleDone(item) : undefined}
           />
@@ -58,9 +66,12 @@ export function CategoryEntriesScreen({ route, navigation }: Props) {
         ListHeaderComponent={
           <View style={{ paddingHorizontal: 16, paddingTop: 18, paddingBottom: 8 }}>
             <Text variant="headlineSmall" style={{ fontWeight: '900' }}>
-              {entryTypeLabel[type]}
+              {category?.label ?? '分类内容'}
             </Text>
             <Text variant="bodyMedium" style={{ marginTop: 4, color: theme.colors.onSurfaceVariant }}>
+              {category?.description ?? `共 ${entries.length} 个条目`}
+            </Text>
+            <Text variant="labelMedium" style={{ marginTop: 6, color: theme.colors.primary }}>
               共 {entries.length} 个条目
             </Text>
           </View>
@@ -83,7 +94,7 @@ export function CategoryEntriesScreen({ route, navigation }: Props) {
                 这个分类还没有内容
               </Text>
               <Text variant="bodyMedium" style={{ marginTop: 8, color: theme.colors.onSurfaceVariant }}>
-                点击这里新建记录。即使分类为空，也会显示与卡片外形一致的原生水波反馈。
+                点击这里新建记录。
               </Text>
             </View>
           </MotionTouchable>
