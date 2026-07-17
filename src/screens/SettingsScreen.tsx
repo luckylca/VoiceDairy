@@ -172,7 +172,7 @@ export function SettingsScreen() {
     await clearLocalDatabase();
     showNotification({
       title: '本地数据已清空',
-      message: '时间线和分类统计将在返回后刷新。',
+      message: '时间线、项目和分类统计将在返回后刷新。',
       kind: 'warning',
       icon: 'delete-outline',
     });
@@ -199,7 +199,7 @@ export function SettingsScreen() {
           设置
         </Text>
         <Text variant="bodyMedium" style={{ marginTop: 4, color: theme.colors.onSurfaceVariant }}>
-          管理外观、智能整理、本地识别和数据同步。
+          管理外观、分类、项目、智能整理和数据同步。
         </Text>
 
         <View style={cardStyle}>
@@ -302,6 +302,59 @@ export function SettingsScreen() {
 
         <View style={cardStyle}>
           <Text variant="titleMedium" style={styles.sectionTitle}>
+            内容管理
+          </Text>
+          <Text variant="bodySmall" style={{ marginTop: 5, color: theme.colors.onSurfaceVariant }}>
+            管理分类显示方式，以及独立的项目和需求清单。
+          </Text>
+
+          <MotionTouchable
+            onPress={() => navigation.navigate('CategorySettings')}
+            borderRadius={16}
+            style={{ marginTop: 14 }}
+            contentStyle={[styles.managementItem, { backgroundColor: theme.colors.surfaceVariant }]}
+          >
+            <View style={styles.settingRow}>
+              <View style={[styles.rowIcon, { backgroundColor: theme.colors.primaryContainer }]}>
+                <Icon source="shape-outline" size={23} color={theme.colors.onPrimaryContainer} />
+              </View>
+              <View style={styles.rowText}>
+                <Text variant="titleMedium" style={{ fontWeight: '800' }}>
+                  分类设置
+                </Text>
+                <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
+                  修改想法、待办、项目进度和提醒的名称与说明
+                </Text>
+              </View>
+              <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
+            </View>
+          </MotionTouchable>
+
+          <MotionTouchable
+            onPress={() => navigation.navigate('ProjectSettings')}
+            borderRadius={16}
+            style={{ marginTop: 10 }}
+            contentStyle={[styles.managementItem, { backgroundColor: theme.colors.surfaceVariant }]}
+          >
+            <View style={styles.settingRow}>
+              <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}>
+                <Icon source="folder-outline" size={23} color={theme.colors.onTertiaryContainer} />
+              </View>
+              <View style={styles.rowText}>
+                <Text variant="titleMedium" style={{ fontWeight: '800' }}>
+                  项目设置
+                </Text>
+                <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
+                  新建项目，并维护可以勾选完成的项目需求
+                </Text>
+              </View>
+              <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
+            </View>
+          </MotionTouchable>
+        </View>
+
+        <View style={cardStyle}>
+          <Text variant="titleMedium" style={styles.sectionTitle}>
             智能整理
           </Text>
           <TextInput
@@ -345,12 +398,7 @@ export function SettingsScreen() {
           <MotionTouchable
             onPress={() => navigation.navigate('PromptSettings')}
             borderRadius={16}
-            contentStyle={{
-              borderRadius: 16,
-              paddingVertical: 12,
-              paddingHorizontal: 12,
-              backgroundColor: theme.colors.surfaceVariant,
-            }}
+            contentStyle={[styles.managementItem, { backgroundColor: theme.colors.surfaceVariant }]}
           >
             <View style={styles.settingRow}>
               <View style={[styles.rowIcon, { backgroundColor: theme.colors.primaryContainer }]}>
@@ -380,12 +428,7 @@ export function SettingsScreen() {
               })
             }
             borderRadius={16}
-            contentStyle={{
-              borderRadius: 16,
-              paddingVertical: 12,
-              paddingHorizontal: 12,
-              backgroundColor: theme.colors.surfaceVariant,
-            }}
+            contentStyle={[styles.managementItem, { backgroundColor: theme.colors.surfaceVariant }]}
           >
             <View style={styles.settingRow}>
               <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}>
@@ -536,6 +579,11 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  managementItem: {
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
   },
   settingRow: {
     flexDirection: 'row',
