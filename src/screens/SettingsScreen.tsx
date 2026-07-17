@@ -14,11 +14,12 @@ import {
   TextInput,
   useTheme,
 } from 'react-native-paper';
-import type { AppSettings, ThemeMode } from '../types/settings';
+import type { AppSettings, OrganizerProvider, ThemeMode } from '../types/settings';
 import { defaultSettings, loadSettings, saveSettings } from '../services/settings/SettingsService';
 import { clearLocalDatabase } from '../services/database/Database';
 import { buildJsonSnapshot } from '../services/sync/SyncService';
 import { fetchAvailableModels } from '../services/llm/LlmService';
+import { getLocalModelStatus, type LocalModelStatus } from '../services/llm/LocalModelService';
 import {
   getDisplayRefreshRateInfo,
   requestHighDisplayRefreshRate,
@@ -30,6 +31,12 @@ import { useFluidNotification } from '../notifications/FluidNotificationProvider
 
 function formatHz(rate: number): string {
   return Math.abs(rate - Math.round(rate)) < 0.05 ? `${Math.round(rate)}Hz` : `${rate.toFixed(1)}Hz`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 MB';
+  const megabytes = bytes / 1024 / 1024;
+  return megabytes < 1024 ? `${megabytes.toFixed(megabytes >= 100 ? 0 : 1)} MB` : `${(megabytes / 1024).toFixed(2)} GB`;
 }
 
 export function SettingsScreen() {
@@ -44,12 +51,15 @@ export function SettingsScreen() {
   const [loadingModels, setLoadingModels] = useState(false);
   const [refreshInfo, setRefreshInfo] = useState<DisplayRefreshRateInfo | null>(null);
   const [requestingRefresh, setRequestingRefresh] = useState(false);
+  const [localModelStatus, setLocalModelStatus] = useState<LocalModelStatus | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      loadSettings().then(current => {
-        if (active) setSettings(current);
+      Promise.all([loadSettings(), getLocalModelStatus()]).then(([current, modelStatus]) => {
+        if (!active) return;
+        setSettings(current);
+        setLocalModelStatus(modelStatus);
       });
       getDisplayRefreshRateInfo()
         .then(info => {
@@ -99,6 +109,24 @@ export function SettingsScreen() {
       message: '主题色已保存，重启应用后仍会保留。',
       kind: 'success',
       icon: 'palette-outline',
+    });
+  }
+
+  async function handleOrganizerProviderChange(value: string) {
+    const organizerProvider = value as OrganizerProvider;
+    const next = { ...settings, organizerProvider };
+    setSettings(next);
+    await saveSettings(next);
+    showNotification({
+      title: organizerProvider === 'local' ? '已启用本地 Qwen 整理' : '已切换到云端 API',
+      message:
+        organizerProvider === 'local'
+          ? localModelStatus?.exists
+            ? '识别后的文本将直接在手机上整理。'
+            : '请进入本地模型页面下载约563MB模型。'
+          : '识别后的文本将发送到配置的兼容 API。',
+      kind: organizerProvider === 'local' && !localModelStatus?.exists ? 'warning' : 'success',
+      icon: organizerProvider === 'local' ? 'cellphone' : 'cloud-outline',
     });
   }
 
@@ -152,7 +180,7 @@ export function SettingsScreen() {
     await saveSettings(settings);
     showNotification({
       title: '设置已保存',
-      message: 'API、WebDAV 与界面配置已写入本地。',
+      message: '整理方式、API、WebDAV 与界面配置已写入本地。',
       kind: 'success',
       icon: 'content-save-outline',
     });
@@ -172,7 +200,7 @@ export function SettingsScreen() {
     await clearLocalDatabase();
     showNotification({
       title: '本地数据已清空',
-      message: '时间线、项目和分类统计将在返回后刷新。',
+      message: '时间线、项目和分类统计将在返回后刷新；本地模型文件不会被删除。',
       kind: 'warning',
       icon: 'delete-outline',
     });
@@ -357,42 +385,95 @@ export function SettingsScreen() {
           <Text variant="titleMedium" style={styles.sectionTitle}>
             智能整理
           </Text>
-          <TextInput
-            mode="outlined"
-            label="API Base URL"
-            value={settings.apiBaseUrl}
-            onChangeText={apiBaseUrl => patchSettings({ apiBaseUrl })}
-            autoCapitalize="none"
+          <Text variant="bodySmall" style={{ marginTop: 5, color: theme.colors.onSurfaceVariant }}>
+            语音由 SenseVoice 本地转写，整理阶段可选择云端 API 或本地 Qwen。
+          </Text>
+          <SegmentedButtons
+            value={settings.organizerProvider}
+            onValueChange={handleOrganizerProviderChange}
+            buttons={[
+              { value: 'cloud', label: '云端 API', icon: 'cloud-outline' },
+              { value: 'local', label: '本地 Qwen', icon: 'cellphone' },
+            ]}
             style={{ marginTop: 14 }}
           />
-          <TextInput
-            mode="outlined"
-            label="API Key"
-            value={settings.apiKey}
-            onChangeText={apiKey => patchSettings({ apiKey })}
-            secureTextEntry
-            autoCapitalize="none"
-            style={{ marginTop: 12 }}
-          />
-          <TextInput
-            mode="outlined"
-            label="模型名"
-            value={settings.modelName}
-            onChangeText={modelName => patchSettings({ modelName })}
-            autoCapitalize="none"
-            style={{ marginTop: 12 }}
-          />
-          <Button
-            mode="outlined"
-            icon="database-search-outline"
-            loading={loadingModels}
-            disabled={loadingModels || !settings.apiBaseUrl.trim()}
-            onPress={handleFetchModels}
-            style={{ marginTop: 12, borderRadius: 14 }}
-            contentStyle={styles.actionButtonContent}
+
+          <MotionTouchable
+            onPress={() => navigation.navigate('LocalModelSettings')}
+            borderRadius={16}
+            style={{ marginTop: 14 }}
+            contentStyle={[
+              styles.managementItem,
+              {
+                backgroundColor:
+                  settings.organizerProvider === 'local'
+                    ? theme.colors.primaryContainer
+                    : theme.colors.surfaceVariant,
+              },
+            ]}
           >
-            获取模型列表
-          </Button>
+            <View style={styles.settingRow}>
+              <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}>
+                <Icon source="brain" size={23} color={theme.colors.onTertiaryContainer} />
+              </View>
+              <View style={styles.rowText}>
+                <Text variant="titleMedium" style={{ fontWeight: '800' }}>
+                  本地模型管理
+                </Text>
+                <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
+                  {localModelStatus?.exists
+                    ? `${localModelStatus.loaded ? '已加载' : '已下载'} · ${formatBytes(localModelStatus.bytes)}`
+                    : 'Qwen3.5-0.8B Q4_0 · 约563MB · 尚未下载'}
+                </Text>
+              </View>
+              <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
+            </View>
+          </MotionTouchable>
+
+          {settings.organizerProvider === 'cloud' ? (
+            <>
+              <TextInput
+                mode="outlined"
+                label="API Base URL"
+                value={settings.apiBaseUrl}
+                onChangeText={apiBaseUrl => patchSettings({ apiBaseUrl })}
+                autoCapitalize="none"
+                style={{ marginTop: 14 }}
+              />
+              <TextInput
+                mode="outlined"
+                label="API Key"
+                value={settings.apiKey}
+                onChangeText={apiKey => patchSettings({ apiKey })}
+                secureTextEntry
+                autoCapitalize="none"
+                style={{ marginTop: 12 }}
+              />
+              <TextInput
+                mode="outlined"
+                label="模型名"
+                value={settings.modelName}
+                onChangeText={modelName => patchSettings({ modelName })}
+                autoCapitalize="none"
+                style={{ marginTop: 12 }}
+              />
+              <Button
+                mode="outlined"
+                icon="database-search-outline"
+                loading={loadingModels}
+                disabled={loadingModels || !settings.apiBaseUrl.trim()}
+                onPress={handleFetchModels}
+                style={{ marginTop: 12, borderRadius: 14 }}
+                contentStyle={styles.actionButtonContent}
+              >
+                获取模型列表
+              </Button>
+            </>
+          ) : (
+            <Text variant="bodySmall" style={{ marginTop: 12, color: theme.colors.onSurfaceVariant }}>
+              本地模式不会发送识别文本。首次加载模型会占用额外内存，整理结束后可在模型页面手动卸载。
+            </Text>
+          )}
 
           <Divider style={{ marginTop: 18, marginBottom: 8 }} />
           <MotionTouchable
@@ -409,7 +490,7 @@ export function SettingsScreen() {
                   整理提示词
                 </Text>
                 <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
-                  在独立页面中编辑结构化整理规则
+                  云端和本地模型共用结构化整理规则
                 </Text>
               </View>
               <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
