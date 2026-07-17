@@ -10,6 +10,10 @@ export const defaultSettings: AppSettings = {
   apiBaseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   modelName: 'gpt-4o-mini',
+  organizerProvider: 'cloud',
+  localModelName: 'Qwen3.5-0.8B-Q4_0',
+  localModelContextSize: 2048,
+  localModelGpuLayers: 0,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   themeMode: 'system',
   colorSeed: '#6750A4',
@@ -32,6 +36,15 @@ export async function loadSettings(): Promise<AppSettings> {
     return {
       ...defaultSettings,
       ...saved,
+      organizerProvider: saved.organizerProvider === 'local' ? 'local' : 'cloud',
+      localModelContextSize:
+        typeof saved.localModelContextSize === 'number' && saved.localModelContextSize >= 1024
+          ? saved.localModelContextSize
+          : defaultSettings.localModelContextSize,
+      localModelGpuLayers:
+        typeof saved.localModelGpuLayers === 'number' && saved.localModelGpuLayers >= 0
+          ? saved.localModelGpuLayers
+          : defaultSettings.localModelGpuLayers,
       systemPrompt: systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     };
   } catch {
