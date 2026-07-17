@@ -6,6 +6,7 @@
     "android": "react-native run-android",
     "android:dev": "adb reverse tcp:8081 tcp:8081 && react-native run-android",
     "prepare:asr": "bash scripts/prepare-asr-assets.sh",
+    "postinstall": "node scripts/patch-llama-rn-bridge.js",
     "start": "react-native start",
     "dev": "adb reverse tcp:8081 tcp:8081 && sh -c 'react-native start --reset-cache & METRO_PID=$!; sleep 5; adb shell am start -n com.voicedairy/.MainActivity; wait $METRO_PID'",
     "quick": "adb reverse tcp:8081 tcp:8081 && adb shell am start -n com.voicedairy/.MainActivity",
