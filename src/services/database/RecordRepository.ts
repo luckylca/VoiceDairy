@@ -22,6 +22,7 @@ export async function upsertRecord(record: RecordItem): Promise<void> {
 export async function deleteRecord(recordId: string): Promise<void> {
   const snapshot = await loadSnapshot();
   await saveSnapshot({
+    ...snapshot,
     records: snapshot.records.filter(item => item.id !== recordId),
     entries: snapshot.entries.filter(item => item.recordId !== recordId),
   });
