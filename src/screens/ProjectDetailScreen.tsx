@@ -2,7 +2,17 @@ import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { FlatList, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Button, Checkbox, IconButton, Text, TextInput, useTheme } from 'react-native-paper';
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  FAB,
+  IconButton,
+  Portal,
+  Text,
+  TextInput,
+  useTheme,
+} from 'react-native-paper';
 import type { RootStackParamList } from '../navigation/types';
 import type { ProjectItem, ProjectRequirement } from '../types/project';
 import {
@@ -11,6 +21,7 @@ import {
   getProjectById,
   toggleProjectRequirement,
 } from '../services/database/ProjectRepository';
+import { MotionTouchable } from '../components/MotionTouchable';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProjectDetail'>;
@@ -20,6 +31,7 @@ export function ProjectDetailScreen({ route, navigation }: Props) {
   const { showNotification } = useFluidNotification();
   const [project, setProject] = useState<ProjectItem | null>(null);
   const [requirementText, setRequirementText] = useState('');
+  const [createVisible, setCreateVisible] = useState(false);
   const [adding, setAdding] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -44,6 +56,12 @@ export function ProjectDetailScreen({ route, navigation }: Props) {
     });
   }, [project]);
 
+  function closeCreateDialog() {
+    if (adding) return;
+    setCreateVisible(false);
+    setRequirementText('');
+  }
+
   async function handleAddRequirement() {
     if (!project || !requirementText.trim()) return;
     setAdding(true);
@@ -51,6 +69,7 @@ export function ProjectDetailScreen({ route, navigation }: Props) {
       const updated = await addProjectRequirement(project.id, requirementText);
       setProject(updated);
       setRequirementText('');
+      setCreateVisible(false);
       showNotification({
         title: '需求已添加',
         message: updated.name,
@@ -106,9 +125,7 @@ export function ProjectDetailScreen({ route, navigation }: Props) {
       <FlatList
         data={requirements}
         keyExtractor={item => item.id}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        contentContainerStyle={{ padding: 16, paddingBottom: 40, flexGrow: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 112, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View>
@@ -132,50 +149,17 @@ export function ProjectDetailScreen({ route, navigation }: Props) {
               </Text>
             </View>
 
-            <View
-              style={{
-                marginTop: 14,
-                padding: 16,
-                borderRadius: 22,
-                borderWidth: 1,
-                borderColor: theme.colors.outlineVariant,
-                backgroundColor: theme.colors.surface,
-              }}
-            >
-              <Text variant="titleMedium" style={{ fontWeight: '900' }}>
-                新建需求
-              </Text>
-              <TextInput
-                mode="outlined"
-                label="输入项目需求或待办"
-                value={requirementText}
-                onChangeText={setRequirementText}
-                onSubmitEditing={handleAddRequirement}
-                returnKeyType="done"
-                style={{ marginTop: 12 }}
-              />
-              <Button
-                mode="contained"
-                icon="plus"
-                loading={adding}
-                disabled={adding || !requirementText.trim()}
-                onPress={handleAddRequirement}
-                style={{ marginTop: 12, borderRadius: 14 }}
-                contentStyle={{ minHeight: 48 }}
-              >
-                添加需求
-              </Button>
-            </View>
-
             <Text variant="titleMedium" style={{ marginTop: 20, marginBottom: 4, fontWeight: '900' }}>
               项目需求
             </Text>
           </View>
         }
         ListEmptyComponent={
-          <View
-            style={{
-              marginTop: 8,
+          <MotionTouchable
+            onPress={() => setCreateVisible(true)}
+            borderRadius={20}
+            style={{ marginTop: 8 }}
+            contentStyle={{
               padding: 22,
               borderRadius: 20,
               borderWidth: 1,
@@ -187,9 +171,9 @@ export function ProjectDetailScreen({ route, navigation }: Props) {
               还没有需求
             </Text>
             <Text variant="bodyMedium" style={{ marginTop: 6, color: theme.colors.onSurfaceVariant }}>
-              在上方输入需求，之后可以点击前面的勾选框标记完成。
+              点击这里新建第一条项目需求。
             </Text>
-          </View>
+          </MotionTouchable>
         }
         renderItem={({ item }) => (
           <View
@@ -235,6 +219,40 @@ export function ProjectDetailScreen({ route, navigation }: Props) {
           </View>
         )}
       />
+
+      <FAB
+        icon="plus"
+        label="新建需求"
+        onPress={() => setCreateVisible(true)}
+        style={{ position: 'absolute', right: 20, bottom: 20 }}
+      />
+
+      <Portal>
+        <Dialog visible={createVisible} onDismiss={closeCreateDialog}>
+          <Dialog.Title>新建项目需求</Dialog.Title>
+          <Dialog.Content>
+            <TextInput
+              mode="outlined"
+              label="需求内容"
+              value={requirementText}
+              onChangeText={setRequirementText}
+              onSubmitEditing={handleAddRequirement}
+              returnKeyType="done"
+              autoFocus
+              multiline
+              numberOfLines={3}
+            />
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button disabled={adding} onPress={closeCreateDialog}>
+              取消
+            </Button>
+            <Button loading={adding} disabled={adding || !requirementText.trim()} onPress={handleAddRequirement}>
+              创建
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </View>
   );
 }
