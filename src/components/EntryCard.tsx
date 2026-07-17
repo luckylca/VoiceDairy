@@ -10,13 +10,19 @@ import { MotionTouchable } from './MotionTouchable';
 
 type EntryCardProps = {
   entry: Entry;
+  typeLabel?: string;
   onPress?: () => void;
+  onLongPress?: () => void;
   onToggleDone?: () => void;
 };
 
-export function EntryCard({ entry, onPress, onToggleDone }: EntryCardProps) {
+export function EntryCard({ entry, typeLabel, onPress, onLongPress, onToggleDone }: EntryCardProps) {
   const theme = useTheme();
   const isTodo = entry.type === 'todo';
+  const isReminder = entry.type === 'reminder';
+  const displayTime = isReminder
+    ? entry.datetime ?? entry.dueDate ?? entry.createdAt
+    : entry.createdAt;
 
   function handleToggleDone(event: GestureResponderEvent) {
     event.stopPropagation();
@@ -26,8 +32,9 @@ export function EntryCard({ entry, onPress, onToggleDone }: EntryCardProps) {
   return (
     <MotionTouchable
       onPress={onPress}
+      onLongPress={onLongPress}
       borderRadius={22}
-      accessibilityLabel={`打开${entry.title}`}
+      accessibilityLabel={`打开${entry.title}，长按可以删除`}
       style={{ marginHorizontal: 16, marginVertical: 7 }}
       contentStyle={{
         borderRadius: 22,
@@ -60,7 +67,7 @@ export function EntryCard({ entry, onPress, onToggleDone }: EntryCardProps) {
               numberOfLines={1}
               style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}
             >
-              {entryTypeLabel[entry.type]} · {formatDateTime(entry.datetime ?? entry.dueDate ?? entry.createdAt)}
+              {typeLabel ?? entryTypeLabel[entry.type]} · {formatDateTime(displayTime)}
             </Text>
           </View>
 
@@ -83,6 +90,8 @@ export function EntryCard({ entry, onPress, onToggleDone }: EntryCardProps) {
             marginTop: 13,
             lineHeight: 22,
             color: entry.status === 'done' ? theme.colors.onSurfaceVariant : theme.colors.onSurface,
+            opacity: entry.status === 'done' ? 0.55 : 1,
+            textDecorationLine: entry.status === 'done' ? 'line-through' : 'none',
           }}
         >
           {truncateText(entry.content, 160)}
