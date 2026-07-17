@@ -24,7 +24,16 @@ jobs:
         run: npm install --silent
 
       - name: Run TypeScript check
-        run: npx tsc --noEmit --pretty false
+        run: |
+          set -o pipefail
+          npx tsc --noEmit --pretty false 2>&1 | tee typescript-check.log
+
+      - name: Upload TypeScript check log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-check-log
+          path: typescript-check.log
 
   android-debug-build:
     name: Android debug build
