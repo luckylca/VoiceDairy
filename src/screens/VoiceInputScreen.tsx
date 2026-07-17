@@ -6,6 +6,7 @@ import type { AppSettings } from '../types/settings';
 import type { RecordSource } from '../types/record';
 import { loadSettings } from '../services/settings/SettingsService';
 import { organizeText } from '../services/llm/LlmService';
+import { getLocalModelStatus } from '../services/llm/LocalModelService';
 import { saveOrganizedResult } from '../services/records/CreateRecordService';
 import { initAsr, startVoiceRecord, stopVoiceRecord } from '../services/asr/AsrService';
 import { MotionTouchable } from '../components/MotionTouchable';
@@ -19,7 +20,7 @@ export function VoiceInputScreen() {
   const [text, setText] = useState('');
   const [inputSource, setInputSource] = useState<RecordSource>('text');
   const [loading, setLoading] = useState(false);
-  const [demoMode, setDemoMode] = useState(true);
+  const [demoMode, setDemoMode] = useState(false);
   const [recording, setRecording] = useState(false);
   const [asrReady, setAsrReady] = useState(false);
 
@@ -98,20 +99,48 @@ export function VoiceInputScreen() {
 
     setLoading(true);
     try {
+      if (!demoMode && settings.organizerProvider === 'local') {
+        const localStatus = await getLocalModelStatus();
+        if (!localStatus.exists) {
+          showNotification({
+            title: '尚未下载本地模型',
+            message: '请先在“设置 → 本地模型管理”中下载 Qwen 模型。',
+            kind: 'warning',
+            icon: 'download-outline',
+          });
+          navigation.navigate('LocalModelSettings');
+          return;
+        }
+        showNotification({
+          title: localStatus.loaded ? '正在本地整理' : '正在加载本地 Qwen',
+          message: localStatus.loaded
+            ? '识别文本不会离开手机。'
+            : '首次加载需要分配模型内存，完成后会继续整理。',
+          kind: 'info',
+          icon: 'brain',
+          duration: 3200,
+        });
+      }
+
       const result = await organizeText({
         text,
         settings,
         demoMode,
       });
+      const organizerModelName = demoMode
+        ? 'demo'
+        : settings.organizerProvider === 'local'
+          ? settings.localModelName
+          : settings.modelName;
       await saveOrganizedResult({
         rawText: text,
         source: inputSource,
         result,
-        modelName: demoMode ? 'demo' : settings.modelName,
+        modelName: organizerModelName,
       });
       showNotification({
         title: '语音笔记已保存',
-        message: `已整理为 ${result.items.length} 个可点击条目。`,
+        message: `已通过${demoMode ? '演示规则' : settings.organizerProvider === 'local' ? '本地 Qwen' : '云端模型'}整理为 ${result.items.length} 个条目。`,
         kind: 'success',
         icon: 'check-circle-outline',
       });
@@ -119,13 +148,20 @@ export function VoiceInputScreen() {
     } catch (error) {
       showNotification({
         title: '整理失败',
-        message: error instanceof Error ? error.message : '请检查 API 设置后重试。',
+        message:
+          error instanceof Error
+            ? error.message
+            : settings.organizerProvider === 'local'
+              ? '请检查本地模型状态和设备可用内存。'
+              : '请检查 API 设置后重试。',
         kind: 'error',
       });
     } finally {
       setLoading(false);
     }
   }
+
+  const organizerLabel = settings?.organizerProvider === 'local' ? '本地 Qwen' : '云端 API';
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
@@ -148,7 +184,7 @@ export function VoiceInputScreen() {
             说出你的想法
           </Text>
           <Text variant="bodyMedium" style={{ marginTop: 6, color: theme.colors.onSurfaceVariant }}>
-            使用内置 SenseVoice 模型离线转写，录音不会上传到云端。
+            SenseVoice 在手机上离线转写，随后由{organizerLabel}完成结构化整理。
           </Text>
           <Button
             mode={recording ? 'outlined' : 'contained'}
@@ -181,7 +217,7 @@ export function VoiceInputScreen() {
             <View style={{ marginLeft: 10, flex: 1 }}>
               <Text variant="titleSmall">演示整理模式</Text>
               <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                开启后不请求大模型 API，适合验证记录流程。
+                开启后不调用云端 API，也不加载本地 Qwen，仅验证记录流程。
               </Text>
             </View>
           </View>
@@ -201,7 +237,13 @@ export function VoiceInputScreen() {
           style={{ marginTop: 18, minHeight: 220 }}
           placeholder="例如：这个周末整理 RoboMaster 弹道检测参数，并把 WebDAV 同步方案写进项目文档。"
         />
-        <HelperText type="info">关闭演示模式前，请先在设置中填写 API 地址、密钥和模型名。</HelperText>
+        <HelperText type="info">
+          {demoMode
+            ? '当前只使用演示规则。'
+            : settings?.organizerProvider === 'local'
+              ? '当前使用本地 Qwen；模型需要先在设置中下载。'
+              : '当前使用云端 API；请确保地址、密钥和模型名已经保存。'}
+        </HelperText>
 
         <Button
           mode="contained"
