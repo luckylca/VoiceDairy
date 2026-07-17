@@ -5,6 +5,9 @@ import { BottomTabs } from './BottomTabs';
 import type { RootStackParamList } from './types';
 import { VoiceInputScreen } from '../screens/VoiceInputScreen';
 import { PromptSettingsScreen } from '../screens/PromptSettingsScreen';
+import { CategorySettingsScreen } from '../screens/CategorySettingsScreen';
+import { ProjectSettingsScreen } from '../screens/ProjectSettingsScreen';
+import { ProjectDetailScreen } from '../screens/ProjectDetailScreen';
 import { EntryDetailScreen } from '../screens/EntryDetailScreen';
 import { CategoryEntriesScreen } from '../screens/CategoryEntriesScreen';
 import { useAppTheme } from '../theme/AppThemeProvider';
@@ -33,7 +36,9 @@ export function RootNavigator() {
     <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator
         screenOptions={{
-          animation: 'slide_from_right',
+          animation: 'simple_push',
+          animationDuration: 160,
+          freezeOnBlur: true,
           headerShadowVisible: false,
           headerStyle: { backgroundColor: theme.colors.surface },
           headerTintColor: theme.colors.onSurface,
@@ -43,6 +48,9 @@ export function RootNavigator() {
         <Stack.Screen name="MainTabs" component={BottomTabs} options={{ headerShown: false }} />
         <Stack.Screen name="VoiceInput" component={VoiceInputScreen} options={{ title: '新建记录' }} />
         <Stack.Screen name="PromptSettings" component={PromptSettingsScreen} options={{ title: '整理提示词' }} />
+        <Stack.Screen name="CategorySettings" component={CategorySettingsScreen} options={{ title: '分类设置' }} />
+        <Stack.Screen name="ProjectSettings" component={ProjectSettingsScreen} options={{ title: '项目设置' }} />
+        <Stack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: '项目详情' }} />
         <Stack.Screen name="EntryDetail" component={EntryDetailScreen} options={{ title: '笔记详情' }} />
         <Stack.Screen name="CategoryEntries" component={CategoryEntriesScreen} options={{ title: '分类内容' }} />
       </Stack.Navigator>
