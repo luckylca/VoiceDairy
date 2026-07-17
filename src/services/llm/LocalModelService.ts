@@ -219,7 +219,6 @@ export async function loadLocalModel(
       n_ctx: settings.localModelContextSize,
       n_batch: 256,
       n_threads: 4,
-      n_threads_batch: 4,
       n_gpu_layers: settings.localModelGpuLayers,
       use_mlock: false,
       flash_attn_type: 'auto',
