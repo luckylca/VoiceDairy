@@ -222,7 +222,7 @@ export function LocalModelSettingsScreen({}: Props) {
       title: '本地模型已卸载',
       message: '模型文件仍保留，仅释放运行内存。',
       kind: 'success',
-      icon: 'memory-arrow-down',
+      icon: 'eject-outline',
     });
   }
 
@@ -389,7 +389,7 @@ export function LocalModelSettingsScreen({}: Props) {
             {status.loaded ? (
               <Button
                 mode="outlined"
-                icon="memory-arrow-down"
+                icon="eject-outline"
                 onPress={handleRelease}
                 style={{ marginTop: 10, borderRadius: 14 }}
               >
