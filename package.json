@@ -5,6 +5,7 @@
   "scripts": {
     "android": "react-native run-android",
     "android:dev": "adb reverse tcp:8081 tcp:8081 && react-native run-android",
+    "install:proxy": "node scripts/install-with-proxy.js",
     "prepare:asr": "bash scripts/prepare-asr-assets.sh",
     "postinstall": "node scripts/patch-llama-rn-bridge.js",
     "start": "react-native start",
