@@ -23,18 +23,17 @@ jobs:
           registry=https://registry.npmmirror.com/
           replace-registry-host=always
           EOF
-          echo "userconfig=$RUNNER_TEMP/user.npmrc" >> "$GITHUB_ENV"
 
       - name: Confirm project npm config wins
         env:
-          NPM_CONFIG_USERCONFIG: ${{ env.userconfig }}
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/user.npmrc
         run: |
           test "$(npm config get registry)" = "https://registry.npmjs.org/"
           test "$(npm config get replace-registry-host)" = "never"
 
       - name: Install dependencies through official registry
         env:
-          NPM_CONFIG_USERCONFIG: ${{ env.userconfig }}
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/user.npmrc
         run: npm install --silent
 
       - name: Verify llama.rn version
