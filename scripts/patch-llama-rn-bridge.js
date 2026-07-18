@@ -84,8 +84,20 @@ const legacyModule = NativeModules.RNLlama as Spec | undefined
 
 const missingModule: Spec = {
   async install(): Promise<boolean> {
+    const names = Object.keys(NativeModules).sort()
+    const related = names.filter((name) =>
+      /llama|voice|sherpa|clipboard|refresh/i.test(name),
+    )
+    const visible = names.slice(0, 80).join(', ') || '(none)'
+    const relatedText = related.join(', ') || '(none)'
+
     throw new Error(
-      '[RNLlama] Android native module is unavailable. Rebuild and reinstall the APK; reloading Metro cannot add native modules.',
+      '[RNLlama] Android native module is unavailable. ' +
+        'NativeModules count=' + names.length +
+        '; related modules=' + relatedText +
+        '; visible modules=' + visible +
+        '. The APK must register RNLlamaModule through the legacy ReactPackage path. ' +
+        'Rebuild and reinstall the APK; reloading Metro cannot add native modules.',
     )
   },
 }

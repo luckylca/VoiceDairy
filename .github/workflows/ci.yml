@@ -36,8 +36,26 @@ jobs:
           if (!source.includes('NativeModules.RNLlama')) {
             throw new Error('llama.rn legacy NativeModules fallback was not installed');
           }
+          if (!source.includes('NativeModules count=')) {
+            throw new Error('llama.rn native module diagnostics were not installed');
+          }
           if (!fs.existsSync('node_modules/llama.rn/android/src/main/java/com/rnllama/NativeRNLlamaSpec.java')) {
             throw new Error('llama.rn bridge compatibility spec is missing');
+          }
+
+          const app = fs.readFileSync(
+            'android/app/src/main/java/com/voicedairy/MainApplication.kt',
+            'utf8',
+          );
+          const pkg = fs.readFileSync(
+            'android/app/src/main/java/com/voicedairy/asr/SherpaAsrPackage.java',
+            'utf8',
+          );
+          if (!app.includes('removeAll { it.javaClass.name == "com.rnllama.RNLlamaPackage" }')) {
+            throw new Error('llama.rn TurboReactPackage is not removed from PackageList');
+          }
+          if (!pkg.includes('new RNLlamaModule(reactContext)')) {
+            throw new Error('RNLlamaModule is not directly registered through the legacy ReactPackage');
           }
           NODE
 
