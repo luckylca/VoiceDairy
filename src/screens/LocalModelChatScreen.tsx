@@ -22,21 +22,14 @@ import {
 import { createId } from '../utils/id';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 
- type Props = NativeStackScreenProps<RootStackParamList, 'LocalModelChat'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'LocalModelChat'>;
 
 type UiMessage = LocalChatMessage & {
   id: string;
   completedLabels?: string[];
 };
 
-const WELCOME_MESSAGE: UiMessage = {
-  id: 'welcome',
-  role: 'assistant',
-  content:
-    '你可以问我当前有哪些项目、某个项目还剩哪些需求，也可以直接说“VoiceDairy 的本地模型对话页面已经完成了”。只有在你明确表示完成时，我才会勾选对应需求。',
-};
-
-export function LocalModelChatScreen({ navigation }: Props) {
+export function LocalModelChatScreen({}: Props) {
   const theme = useTheme();
   const { showNotification } = useFluidNotification();
   const listRef = useRef<FlatList<UiMessage>>(null);
@@ -44,7 +37,7 @@ export function LocalModelChatScreen({ navigation }: Props) {
   const [status, setStatus] = useState<LocalModelStatus | null>(null);
   const [projectCount, setProjectCount] = useState(0);
   const [requirementCount, setRequirementCount] = useState(0);
-  const [messages, setMessages] = useState<UiMessage[]>([WELCOME_MESSAGE]);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -79,9 +72,10 @@ export function LocalModelChatScreen({ navigation }: Props) {
       return;
     }
 
-    const history: LocalChatMessage[] = messages
-      .filter(message => message.id !== 'welcome')
-      .map(message => ({ role: message.role, content: message.content }));
+    const history: LocalChatMessage[] = messages.map(message => ({
+      role: message.role,
+      content: message.content,
+    }));
     const userMessage: UiMessage = { id: createId('chat'), role: 'user', content: text };
     setMessages(previous => [...previous, userMessage]);
     setInput('');
@@ -133,10 +127,6 @@ export function LocalModelChatScreen({ navigation }: Props) {
     }
   }
 
-  function clearConversation() {
-    setMessages([WELCOME_MESSAGE]);
-  }
-
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: theme.colors.background }}
@@ -162,7 +152,7 @@ export function LocalModelChatScreen({ navigation }: Props) {
             {projectCount} 个项目 · {requirementCount} 条需求 · {status?.loaded ? '模型已加载' : '发送时自动加载'}
           </Text>
         </View>
-        <Button compact onPress={clearConversation} disabled={sending}>
+        <Button compact onPress={() => setMessages([])} disabled={sending || messages.length === 0}>
           清空
         </Button>
       </View>
@@ -171,9 +161,25 @@ export function LocalModelChatScreen({ navigation }: Props) {
         ref={listRef}
         data={messages}
         keyExtractor={item => item.id}
-        contentContainerStyle={{ padding: 16, paddingTop: 4, paddingBottom: 20 }}
+        contentContainerStyle={{ padding: 16, paddingTop: 4, paddingBottom: 20, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <View style={[styles.emptyIcon, { backgroundColor: theme.colors.secondaryContainer }]}> 
+              <Icon source="message-text-outline" size={30} color={theme.colors.onSecondaryContainer} />
+            </View>
+            <Text variant="titleMedium" style={{ marginTop: 14, fontWeight: '900', textAlign: 'center' }}>
+              直接和本地 Qwen 对话
+            </Text>
+            <Text
+              variant="bodyMedium"
+              style={{ marginTop: 8, color: theme.colors.onSurfaceVariant, textAlign: 'center', lineHeight: 22 }}
+            >
+              每次发送消息前，应用都会重新读取手机中当前保存的全部项目、项目说明、需求标题和完成状态。你可以正常描述进度，也可以明确告诉它某项需求已经完成。
+            </Text>
+          </View>
+        }
         renderItem={({ item }) => {
           const isUser = item.role === 'user';
           return (
@@ -214,7 +220,7 @@ export function LocalModelChatScreen({ navigation }: Props) {
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}>
               <ActivityIndicator size={18} />
               <Text variant="bodySmall" style={{ marginLeft: 8, color: theme.colors.onSurfaceVariant }}>
-                本地 Qwen 正在读取项目上下文并生成回复…
+                正在读取最新项目内容并生成回复…
               </Text>
             </View>
           ) : null
@@ -232,7 +238,7 @@ export function LocalModelChatScreen({ navigation }: Props) {
       >
         <TextInput
           mode="outlined"
-          placeholder="询问项目，或说明某条需求已完成"
+          placeholder="输入消息"
           value={input}
           onChangeText={setInput}
           multiline
@@ -269,6 +275,20 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+    paddingBottom: 40,
+  },
+  emptyIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
