@@ -9,8 +9,11 @@
  * VoiceDairy intentionally stays on bridge mode for this proof of concept so
  * SenseVoice, PagerView and the existing 120 Hz native code are not forced
  * through a framework-wide React Native upgrade. This script restores the
- * generated Java base class and makes the JavaScript entry resolve the legacy
- * NativeModules bridge when TurboModuleRegistry does not expose RNLlama.
+ * generated Java base class and makes the JavaScript entry try, in order:
+ *
+ * 1. llama.rn's TurboModule;
+ * 2. llama.rn's legacy NativeModules entry;
+ * 3. VoiceDairy's app-owned VoiceLlamaBridge module.
  */
 
 const fs = require('fs');
@@ -81,28 +84,26 @@ export interface Spec extends TurboModule {
 
 const turboModule = TurboModuleRegistry.get<Spec>('RNLlama')
 const legacyModule = NativeModules.RNLlama as Spec | undefined
+const voiceDairyBridge = NativeModules.VoiceLlamaBridge as Spec | undefined
 
 const missingModule: Spec = {
   async install(): Promise<boolean> {
-    const names = Object.keys(NativeModules).sort()
-    const related = names.filter((name) =>
-      /llama|voice|sherpa|clipboard|refresh/i.test(name),
-    )
-    const visible = names.slice(0, 80).join(', ') || '(none)'
-    const relatedText = related.join(', ') || '(none)'
+    const probes = [
+      'RNLlama=' + String(Boolean(NativeModules.RNLlama)),
+      'VoiceLlamaBridge=' + String(Boolean(NativeModules.VoiceLlamaBridge)),
+      'VoiceClipboard=' + String(Boolean(NativeModules.VoiceClipboard)),
+      'SherpaAsr=' + String(Boolean(NativeModules.SherpaAsr)),
+    ].join(', ')
 
     throw new Error(
-      '[RNLlama] Android native module is unavailable. ' +
-        'NativeModules count=' + names.length +
-        '; related modules=' + relatedText +
-        '; visible modules=' + visible +
-        '. The APK must register RNLlamaModule through the legacy ReactPackage path. ' +
-        'Rebuild and reinstall the APK; reloading Metro cannot add native modules.',
+      '[RNLlama] Android native install bridge is unavailable. ' +
+        'Direct module probes: ' + probes + '. ' +
+        'Install an APK containing VoiceLlamaBridge; Metro reload alone cannot add it.',
     )
   },
 }
 
-export default turboModule ?? legacyModule ?? missingModule
+export default turboModule ?? legacyModule ?? voiceDairyBridge ?? missingModule
 `;
 
 fs.mkdirSync(path.dirname(specPath), { recursive: true });
@@ -110,4 +111,4 @@ fs.writeFileSync(specPath, specSource, 'utf8');
 fs.writeFileSync(nativeModulePath, nativeModuleSource, 'utf8');
 
 console.log('[VoiceDairy llama.rn] bridge compatibility spec installed.');
-console.log('[VoiceDairy llama.rn] legacy NativeModules fallback installed.');
+console.log('[VoiceDairy llama.rn] RNLlama and VoiceLlamaBridge fallbacks installed.');
