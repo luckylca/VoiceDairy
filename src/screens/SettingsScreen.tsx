@@ -1,10 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   Button,
   Dialog,
-  Divider,
   Icon,
   Portal,
   RadioButton,
@@ -16,27 +15,18 @@ import {
 } from 'react-native-paper';
 import type { AppSettings, OrganizerProvider, ThemeMode } from '../types/settings';
 import { defaultSettings, loadSettings, saveSettings } from '../services/settings/SettingsService';
-import { clearLocalDatabase } from '../services/database/Database';
-import { buildJsonSnapshot } from '../services/sync/SyncService';
 import { fetchAvailableModels } from '../services/llm/LlmService';
 import { getLocalModelStatus, type LocalModelStatus } from '../services/llm/LocalModelService';
-import {
-  getDisplayRefreshRateInfo,
-  requestHighDisplayRefreshRate,
-  type DisplayRefreshRateInfo,
-} from '../services/display/DisplayRefreshRate';
 import { THEME_PRESETS, useAppTheme } from '../theme/AppThemeProvider';
 import { MotionTouchable } from '../components/MotionTouchable';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 
-function formatHz(rate: number): string {
-  return Math.abs(rate - Math.round(rate)) < 0.05 ? `${Math.round(rate)}Hz` : `${rate.toFixed(1)}Hz`;
-}
-
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return '0 MB';
   const megabytes = bytes / 1024 / 1024;
-  return megabytes < 1024 ? `${megabytes.toFixed(megabytes >= 100 ? 0 : 1)} MB` : `${(megabytes / 1024).toFixed(2)} GB`;
+  return megabytes < 1024
+    ? `${megabytes.toFixed(megabytes >= 100 ? 0 : 1)} MB`
+    : `${(megabytes / 1024).toFixed(2)} GB`;
 }
 
 export function SettingsScreen() {
@@ -45,13 +35,12 @@ export function SettingsScreen() {
   const { setThemeMode, setColorSeed } = useAppTheme();
   const { showNotification } = useFluidNotification();
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [localModelStatus, setLocalModelStatus] = useState<LocalModelStatus | null>(null);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelQuery, setModelQuery] = useState('');
   const [modelDialogVisible, setModelDialogVisible] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
-  const [refreshInfo, setRefreshInfo] = useState<DisplayRefreshRateInfo | null>(null);
-  const [requestingRefresh, setRequestingRefresh] = useState(false);
-  const [localModelStatus, setLocalModelStatus] = useState<LocalModelStatus | null>(null);
+  const [savingCloud, setSavingCloud] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -61,12 +50,6 @@ export function SettingsScreen() {
         setSettings(current);
         setLocalModelStatus(modelStatus);
       });
-      getDisplayRefreshRateInfo()
-        .then(info => {
-          if (active) setRefreshInfo(info);
-        })
-        .catch(() => undefined);
-
       return () => {
         active = false;
       };
@@ -106,7 +89,7 @@ export function SettingsScreen() {
     const preset = THEME_PRESETS.find(item => item.seed.toLowerCase() === colorSeed.toLowerCase());
     showNotification({
       title: `已应用${preset?.label ?? '新'}主题`,
-      message: '主题色已保存，重启应用后仍会保留。',
+      message: '主题色已保存。',
       kind: 'success',
       icon: 'palette-outline',
     });
@@ -122,33 +105,26 @@ export function SettingsScreen() {
       message:
         organizerProvider === 'local'
           ? localModelStatus?.exists
-            ? '识别后的文本将直接在手机上整理。'
-            : '请进入本地模型页面下载约563MB模型。'
-          : '识别后的文本将发送到配置的兼容 API。',
+            ? '识别后的文本会在手机上整理。'
+            : '请进入固定显示的本地模型管理卡片完成下载。'
+          : '识别后的文本会发送到配置的兼容 API。',
       kind: organizerProvider === 'local' && !localModelStatus?.exists ? 'warning' : 'success',
       icon: organizerProvider === 'local' ? 'cellphone' : 'cloud-outline',
     });
   }
 
-  async function handleRequestHighRefresh() {
-    setRequestingRefresh(true);
+  async function handleSaveCloud() {
+    setSavingCloud(true);
     try {
-      const info = await requestHighDisplayRefreshRate();
-      setRefreshInfo(info);
+      await saveSettings(settings);
       showNotification({
-        title: info.systemAcceptedHighRefresh ? '高刷新率已启用' : '系统仍未切换到最高刷新率',
-        message: `当前 ${formatHz(info.currentRate)}，设备最高 ${formatHz(info.maxSupportedRate)}。`,
-        kind: info.systemAcceptedHighRefresh ? 'success' : 'warning',
-        icon: info.systemAcceptedHighRefresh ? 'check-circle-outline' : 'alert-outline',
-      });
-    } catch (error) {
-      showNotification({
-        title: '高刷新率请求失败',
-        message: error instanceof Error ? error.message : '无法读取当前显示模式。',
-        kind: 'error',
+        title: '云端 API 配置已保存',
+        message: `${settings.modelName || '未选择模型'} · ${settings.apiBaseUrl || '未填写地址'}`,
+        kind: 'success',
+        icon: 'cloud-check-outline',
       });
     } finally {
-      setRequestingRefresh(false);
+      setSavingCloud(false);
     }
   }
 
@@ -176,58 +152,24 @@ export function SettingsScreen() {
     }
   }
 
-  async function handleSave() {
-    await saveSettings(settings);
-    showNotification({
-      title: '设置已保存',
-      message: '整理方式、API、WebDAV 与界面配置已写入本地。',
-      kind: 'success',
-      icon: 'content-save-outline',
-    });
-  }
-
-  async function handleExport() {
-    const snapshot = await buildJsonSnapshot();
-    showNotification({
-      title: 'JSON 快照已生成',
-      message: `共 ${snapshot.length} 个字符。`,
-      kind: 'success',
-      icon: 'code-json',
-    });
-  }
-
-  async function handleClear() {
-    await clearLocalDatabase();
-    showNotification({
-      title: '本地数据已清空',
-      message: '时间线、项目和分类统计将在返回后刷新；本地模型文件不会被删除。',
-      kind: 'warning',
-      icon: 'delete-outline',
-    });
-  }
-
-  const cardStyle: StyleProp<ViewStyle> = [
+  const cardStyle = [
     styles.card,
-    {
-      backgroundColor: theme.colors.surface,
-      borderColor: theme.colors.outlineVariant,
-    },
+    { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
   ];
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingTop: 20, paddingBottom: 44 }}
+        contentContainerStyle={{ padding: 16, paddingTop: 20, paddingBottom: 48 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
       >
         <Text variant="headlineMedium" style={{ fontWeight: '900' }}>
           设置
         </Text>
         <Text variant="bodyMedium" style={{ marginTop: 4, color: theme.colors.onSurfaceVariant }}>
-          管理外观、分类、项目、智能整理和数据同步。
+          管理外观、项目、智能整理与应用信息。
         </Text>
 
         <View style={cardStyle}>
@@ -244,7 +186,6 @@ export function SettingsScreen() {
             ]}
             style={{ marginTop: 14 }}
           />
-
           <Text variant="labelLarge" style={{ marginTop: 20, marginBottom: 10 }}>
             主题颜色
           </Text>
@@ -284,48 +225,6 @@ export function SettingsScreen() {
               );
             })}
           </View>
-
-          <Divider style={{ marginTop: 20, marginBottom: 16 }} />
-          <View style={styles.settingRow}>
-            <View style={[styles.rowIcon, { backgroundColor: theme.colors.secondaryContainer }]}>
-              <Icon source="speedometer" size={23} color={theme.colors.onSecondaryContainer} />
-            </View>
-            <View style={styles.rowText}>
-              <Text variant="titleMedium" style={{ fontWeight: '800' }}>
-                显示刷新率
-              </Text>
-              <Text
-                variant="bodySmall"
-                style={{
-                  marginTop: 2,
-                  color:
-                    refreshInfo && !refreshInfo.systemAcceptedHighRefresh
-                      ? theme.colors.error
-                      : theme.colors.onSurfaceVariant,
-                }}
-              >
-                {refreshInfo
-                  ? `当前 ${formatHz(refreshInfo.currentRate)} · 最高 ${formatHz(refreshInfo.maxSupportedRate)}`
-                  : '正在读取设备显示模式…'}
-              </Text>
-              {refreshInfo ? (
-                <Text variant="labelSmall" style={{ marginTop: 3, color: theme.colors.onSurfaceVariant }}>
-                  支持：{refreshInfo.supportedRates.map(formatHz).join(' / ')}
-                </Text>
-              ) : null}
-            </View>
-          </View>
-          <Button
-            mode="outlined"
-            icon="refresh"
-            loading={requestingRefresh}
-            disabled={requestingRefresh}
-            onPress={handleRequestHighRefresh}
-            style={{ marginTop: 14, borderRadius: 14 }}
-            contentStyle={styles.actionButtonContent}
-          >
-            重新请求最高刷新率
-          </Button>
         </View>
 
         <View style={cardStyle}>
@@ -333,52 +232,20 @@ export function SettingsScreen() {
             内容管理
           </Text>
           <Text variant="bodySmall" style={{ marginTop: 5, color: theme.colors.onSurfaceVariant }}>
-            管理分类显示方式，以及独立的项目和需求清单。
+            管理分类、项目和可以被本地助手自动勾选的项目需求。
           </Text>
-
-          <MotionTouchable
+          <SettingsLink
+            icon="shape-outline"
+            title="分类设置"
+            description="修改想法、待办、项目进度和提醒的名称与说明"
             onPress={() => navigation.navigate('CategorySettings')}
-            borderRadius={16}
-            style={{ marginTop: 14 }}
-            contentStyle={[styles.managementItem, { backgroundColor: theme.colors.surfaceVariant }]}
-          >
-            <View style={styles.settingRow}>
-              <View style={[styles.rowIcon, { backgroundColor: theme.colors.primaryContainer }]}>
-                <Icon source="shape-outline" size={23} color={theme.colors.onPrimaryContainer} />
-              </View>
-              <View style={styles.rowText}>
-                <Text variant="titleMedium" style={{ fontWeight: '800' }}>
-                  分类设置
-                </Text>
-                <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
-                  修改想法、待办、项目进度和提醒的名称与说明
-                </Text>
-              </View>
-              <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
-            </View>
-          </MotionTouchable>
-
-          <MotionTouchable
+          />
+          <SettingsLink
+            icon="folder-outline"
+            title="项目设置"
+            description="创建项目，维护需求清单和完成状态"
             onPress={() => navigation.navigate('ProjectSettings')}
-            borderRadius={16}
-            style={{ marginTop: 10 }}
-            contentStyle={[styles.managementItem, { backgroundColor: theme.colors.surfaceVariant }]}
-          >
-            <View style={styles.settingRow}>
-              <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}>
-                <Icon source="folder-outline" size={23} color={theme.colors.onTertiaryContainer} />
-              </View>
-              <View style={styles.rowText}>
-                <Text variant="titleMedium" style={{ fontWeight: '800' }}>
-                  项目设置
-                </Text>
-                <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
-                  新建项目，并维护可以勾选完成的项目需求
-                </Text>
-              </View>
-              <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
-            </View>
-          </MotionTouchable>
+          />
         </View>
 
         <View style={cardStyle}>
@@ -386,7 +253,7 @@ export function SettingsScreen() {
             智能整理
           </Text>
           <Text variant="bodySmall" style={{ marginTop: 5, color: theme.colors.onSurfaceVariant }}>
-            语音由 SenseVoice 本地转写，整理阶段可选择云端 API 或本地 Qwen。
+            SenseVoice 始终在本地转写；这里只决定由云端 API 还是本地 Qwen 整理文本。
           </Text>
           <SegmentedButtons
             value={settings.organizerProvider}
@@ -400,45 +267,52 @@ export function SettingsScreen() {
 
           <MotionTouchable
             onPress={() => navigation.navigate('LocalModelSettings')}
-            borderRadius={16}
+            borderRadius={18}
             style={{ marginTop: 14 }}
             contentStyle={[
-              styles.managementItem,
+              styles.fixedModelCard,
               {
                 backgroundColor:
                   settings.organizerProvider === 'local'
                     ? theme.colors.primaryContainer
                     : theme.colors.surfaceVariant,
+                borderColor:
+                  settings.organizerProvider === 'local'
+                    ? theme.colors.primary
+                    : theme.colors.outlineVariant,
               },
             ]}
           >
             <View style={styles.settingRow}>
-              <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}>
-                <Icon source="brain" size={23} color={theme.colors.onTertiaryContainer} />
+              <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}> 
+                <Icon source="brain" size={24} color={theme.colors.onTertiaryContainer} />
               </View>
               <View style={styles.rowText}>
-                <Text variant="titleMedium" style={{ fontWeight: '800' }}>
+                <Text variant="titleMedium" style={{ fontWeight: '900' }}>
                   本地模型管理
                 </Text>
-                <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
+                <Text variant="bodySmall" style={{ marginTop: 3, color: theme.colors.onSurfaceVariant }}>
                   {localModelStatus?.exists
                     ? `${localModelStatus.loaded ? '已加载' : '已下载'} · ${formatBytes(localModelStatus.bytes)}`
                     : 'Qwen3.5-0.8B Q4_0 · 约563MB · 尚未下载'}
                 </Text>
+                <Text variant="labelSmall" style={{ marginTop: 4, color: theme.colors.primary }}>
+                  始终可用 · 包含独立对话测试入口
+                </Text>
               </View>
-              <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
+              <Icon source="chevron-right" size={23} color={theme.colors.onSurfaceVariant} />
             </View>
           </MotionTouchable>
 
           {settings.organizerProvider === 'cloud' ? (
-            <>
+            <View style={{ marginTop: 4 }}>
               <TextInput
                 mode="outlined"
                 label="API Base URL"
                 value={settings.apiBaseUrl}
                 onChangeText={apiBaseUrl => patchSettings({ apiBaseUrl })}
                 autoCapitalize="none"
-                style={{ marginTop: 14 }}
+                style={{ marginTop: 12 }}
               />
               <TextInput
                 mode="outlined"
@@ -457,139 +331,60 @@ export function SettingsScreen() {
                 autoCapitalize="none"
                 style={{ marginTop: 12 }}
               />
-              <Button
-                mode="outlined"
-                icon="database-search-outline"
-                loading={loadingModels}
-                disabled={loadingModels || !settings.apiBaseUrl.trim()}
-                onPress={handleFetchModels}
-                style={{ marginTop: 12, borderRadius: 14 }}
-                contentStyle={styles.actionButtonContent}
-              >
-                获取模型列表
-              </Button>
-            </>
+              <View style={styles.inlineButtons}>
+                <Button
+                  mode="outlined"
+                  icon="database-search-outline"
+                  loading={loadingModels}
+                  disabled={loadingModels || !settings.apiBaseUrl.trim()}
+                  onPress={handleFetchModels}
+                  style={styles.inlineButton}
+                  contentStyle={styles.actionButtonContent}
+                >
+                  获取模型
+                </Button>
+                <Button
+                  mode="contained"
+                  icon="content-save-outline"
+                  loading={savingCloud}
+                  onPress={handleSaveCloud}
+                  style={styles.inlineButton}
+                  contentStyle={styles.actionButtonContent}
+                >
+                  保存配置
+                </Button>
+              </View>
+            </View>
           ) : (
             <Text variant="bodySmall" style={{ marginTop: 12, color: theme.colors.onSurfaceVariant }}>
-              本地模式不会发送识别文本。首次加载模型会占用额外内存，整理结束后可在模型页面手动卸载。
+              本地模式不会发送识别文本。整理提示词和本地对话都会读取当前全部项目与项目需求。
             </Text>
           )}
 
-          <Divider style={{ marginTop: 18, marginBottom: 8 }} />
-          <MotionTouchable
+          <SettingsLink
+            icon="application-edit-outline"
+            title="整理提示词"
+            description="云端和本地整理共用规则，并自动附加全部项目上下文"
             onPress={() => navigation.navigate('PromptSettings')}
-            borderRadius={16}
-            contentStyle={[styles.managementItem, { backgroundColor: theme.colors.surfaceVariant }]}
-          >
-            <View style={styles.settingRow}>
-              <View style={[styles.rowIcon, { backgroundColor: theme.colors.primaryContainer }]}>
-                <Icon source="application-edit-outline" size={23} color={theme.colors.onPrimaryContainer} />
-              </View>
-              <View style={styles.rowText}>
-                <Text variant="titleMedium" style={{ fontWeight: '800' }}>
-                  整理提示词
-                </Text>
-                <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
-                  云端和本地模型共用结构化整理规则
-                </Text>
-              </View>
-              <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
-            </View>
-          </MotionTouchable>
-        </View>
-
-        <View style={cardStyle}>
-          <MotionTouchable
-            onPress={() =>
-              showNotification({
-                title: '本地语音识别已就绪',
-                message: 'SenseVoice INT8 在手机端离线处理，不会上传录音。',
-                kind: 'success',
-                icon: 'check-circle-outline',
-              })
-            }
-            borderRadius={16}
-            contentStyle={[styles.managementItem, { backgroundColor: theme.colors.surfaceVariant }]}
-          >
-            <View style={styles.settingRow}>
-              <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}>
-                <Icon source="microphone-outline" size={23} color={theme.colors.onTertiaryContainer} />
-              </View>
-              <View style={styles.rowText}>
-                <Text variant="titleMedium" style={{ fontWeight: '800' }}>
-                  本地语音识别
-                </Text>
-                <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
-                  SenseVoice INT8 · 手机端离线处理
-                </Text>
-              </View>
-              <Icon source="information-outline" size={21} color={theme.colors.onSurfaceVariant} />
-            </View>
-          </MotionTouchable>
-        </View>
-
-        <View style={cardStyle}>
-          <Text variant="titleMedium" style={styles.sectionTitle}>
-            WebDAV
-          </Text>
-          <TextInput
-            mode="outlined"
-            label="WebDAV URL"
-            value={settings.webdavUrl ?? ''}
-            onChangeText={webdavUrl => patchSettings({ webdavUrl })}
-            autoCapitalize="none"
-            style={{ marginTop: 14 }}
-          />
-          <TextInput
-            mode="outlined"
-            label="用户名"
-            value={settings.webdavUsername ?? ''}
-            onChangeText={webdavUsername => patchSettings({ webdavUsername })}
-            autoCapitalize="none"
-            style={{ marginTop: 12 }}
-          />
-          <TextInput
-            mode="outlined"
-            label="密码"
-            value={settings.webdavPassword ?? ''}
-            onChangeText={webdavPassword => patchSettings({ webdavPassword })}
-            secureTextEntry
-            style={{ marginTop: 12 }}
           />
         </View>
 
         <View style={cardStyle}>
           <Text variant="titleMedium" style={styles.sectionTitle}>
-            数据
+            系统
           </Text>
-          <Button
-            mode="contained"
-            icon="content-save-outline"
-            onPress={handleSave}
-            style={styles.actionButton}
-            contentStyle={styles.actionButtonContent}
-          >
-            保存设置
-          </Button>
-          <Button
-            mode="outlined"
-            icon="code-json"
-            onPress={handleExport}
-            style={styles.actionButton}
-            contentStyle={styles.actionButtonContent}
-          >
-            生成 JSON 快照
-          </Button>
-          <Button
-            mode="outlined"
-            icon="delete-outline"
-            textColor={theme.colors.error}
-            onPress={handleClear}
-            style={styles.actionButton}
-            contentStyle={styles.actionButtonContent}
-          >
-            清空本地数据
-          </Button>
+          <SettingsLink
+            icon="tools"
+            title="开发者选项"
+            description="显示刷新率、WebDAV、JSON 快照和数据清理"
+            onPress={() => navigation.navigate('DeveloperOptions')}
+          />
+          <SettingsLink
+            icon="information-outline"
+            title="关于 VoiceDairy"
+            description="版本、隐私说明、技术栈和当前开发状态"
+            onPress={() => navigation.navigate('About')}
+          />
         </View>
       </ScrollView>
 
@@ -635,6 +430,40 @@ export function SettingsScreen() {
   );
 }
 
+type SettingsLinkProps = {
+  icon: string;
+  title: string;
+  description: string;
+  onPress: () => void;
+};
+
+function SettingsLink({ icon, title, description, onPress }: SettingsLinkProps) {
+  const theme = useTheme();
+  return (
+    <MotionTouchable
+      onPress={onPress}
+      borderRadius={16}
+      style={{ marginTop: 12 }}
+      contentStyle={[styles.managementItem, { backgroundColor: theme.colors.surfaceVariant }]}
+    >
+      <View style={styles.settingRow}>
+        <View style={[styles.rowIcon, { backgroundColor: theme.colors.secondaryContainer }]}> 
+          <Icon source={icon} size={23} color={theme.colors.onSecondaryContainer} />
+        </View>
+        <View style={styles.rowText}>
+          <Text variant="titleMedium" style={{ fontWeight: '800' }}>
+            {title}
+          </Text>
+          <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
+            {description}
+          </Text>
+        </View>
+        <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
+      </View>
+    </MotionTouchable>
+  );
+}
+
 const styles = StyleSheet.create({
   card: {
     marginTop: 14,
@@ -666,6 +495,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
   },
+  fixedModelCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 13,
+  },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -683,8 +518,13 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     marginRight: 8,
   },
-  actionButton: {
+  inlineButtons: {
+    flexDirection: 'row',
     marginTop: 12,
+    gap: 10,
+  },
+  inlineButton: {
+    flex: 1,
     borderRadius: 14,
   },
   actionButtonContent: {
