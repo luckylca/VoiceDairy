@@ -18,10 +18,10 @@ class MainApplication : Application(), ReactApplication {
 
         override fun getPackages(): List<ReactPackage> =
             PackageList(this).packages.apply {
-                // llama.rn 0.12.6 autolinks a TurboReactPackage. In VoiceDairy's
-                // old-architecture build that package can compile successfully yet expose
-                // no legacy NativeModules entry. Remove it and let SherpaAsrPackage
-                // register RNLlamaModule directly as a normal bridge NativeModule.
+                // llama.rn 0.12.6 autolinks a TurboReactPackage that is not reliably
+                // visible to JavaScript in VoiceDairy's old-architecture build. Remove
+                // it and let SherpaAsrPackage expose VoiceLlamaBridge, an app-owned
+                // classic module that delegates llama.rn's JSI installation directly.
                 removeAll { it.javaClass.name == "com.rnllama.RNLlamaPackage" }
                 add(SherpaAsrPackage())
             }
