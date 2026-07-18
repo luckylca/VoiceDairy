@@ -9,6 +9,7 @@ import {
   ProgressBar,
   SegmentedButtons,
   Text,
+  TouchableRipple,
   useTheme,
 } from 'react-native-paper';
 import type { RootStackParamList } from '../navigation/types';
@@ -25,15 +26,50 @@ import {
   releaseLocalModel,
   type LocalModelStatus,
 } from '../services/llm/LocalModelService';
+import { copyText } from '../services/system/ClipboardService';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LocalModelSettings'>;
+
+type LastError = {
+  title: string;
+  message: string;
+  details: string;
+};
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return '0 MB';
   const megabytes = bytes / 1024 / 1024;
   if (megabytes < 1024) return `${megabytes.toFixed(megabytes >= 100 ? 0 : 1)} MB`;
   return `${(megabytes / 1024).toFixed(2)} GB`;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim() ? error.message : fallback;
+}
+
+function buildErrorDetails(
+  title: string,
+  message: string,
+  error: unknown,
+  settings: AppSettings,
+  status: LocalModelStatus | null,
+): string {
+  return [
+    'VoiceDairy 本地模型错误报告',
+    `标题: ${title}`,
+    `时间: ${new Date().toISOString()}`,
+    `模型: ${LOCAL_QWEN_MODEL.displayName}`,
+    `文件: ${status?.filePath ?? '状态尚未读取'}`,
+    `文件大小: ${status ? formatBytes(status.bytes) : '未知'}`,
+    `运行后端: ${settings.localModelGpuLayers > 0 ? 'GPU/OpenCL' : 'CPU'}`,
+    `上下文长度: ${settings.localModelContextSize}`,
+    `错误类型: ${error instanceof Error ? error.name : typeof error}`,
+    `错误信息: ${message}`,
+    error instanceof Error && error.stack ? `错误堆栈:\n${error.stack}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 export function LocalModelSettingsScreen({}: Props) {
@@ -49,6 +85,7 @@ export function LocalModelSettingsScreen({}: Props) {
   const [loadProgress, setLoadProgress] = useState(0);
   const [testing, setTesting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [lastError, setLastError] = useState<LastError | null>(null);
 
   const refresh = useCallback(async () => {
     const [nextSettings, nextStatus] = await Promise.all([loadSettings(), getLocalModelStatus()]);
@@ -61,6 +98,30 @@ export function LocalModelSettingsScreen({}: Props) {
       refresh();
     }, [refresh]),
   );
+
+  function copyError(details: string) {
+    void copyText(details).catch(error => {
+      showNotification({
+        title: '复制失败',
+        message: getErrorMessage(error, '无法访问系统剪贴板'),
+        kind: 'error',
+      });
+    });
+  }
+
+  function reportError(title: string, error: unknown, fallback: string) {
+    const message = getErrorMessage(error, fallback);
+    const details = buildErrorDetails(title, message, error, settings, status);
+    setLastError({ title, message, details });
+    showNotification({
+      title,
+      message,
+      kind: 'error',
+      duration: 8000,
+      actionLabel: '复制',
+      onAction: () => copyError(details),
+    });
+  }
 
   async function persistPatch(patch: Partial<AppSettings>) {
     const next = { ...settings, ...patch };
@@ -107,6 +168,7 @@ export function LocalModelSettingsScreen({}: Props) {
         setDownloadProgress(progress.progress / 100);
       });
       setStatus(nextStatus);
+      setLastError(null);
       showNotification({
         title: '本地模型下载完成',
         message: `${LOCAL_QWEN_MODEL.displayName} 已保存到应用私有目录。`,
@@ -114,11 +176,7 @@ export function LocalModelSettingsScreen({}: Props) {
         icon: 'download-circle-outline',
       });
     } catch (error) {
-      showNotification({
-        title: '模型下载失败',
-        message: error instanceof Error ? error.message : '请检查网络和剩余存储空间。',
-        kind: 'error',
-      });
+      reportError('模型下载失败', error, '请检查网络和剩余存储空间。');
     } finally {
       setDownloading(false);
       await refresh();
@@ -142,6 +200,7 @@ export function LocalModelSettingsScreen({}: Props) {
     try {
       const nextStatus = await loadLocalModel(settings, progress => setLoadProgress(progress / 100));
       setStatus(nextStatus);
+      setLastError(null);
       showNotification({
         title: '本地模型已加载',
         message: nextStatus.gpu ? '当前使用设备加速后端。' : '当前使用 CPU 兼容模式。',
@@ -149,11 +208,7 @@ export function LocalModelSettingsScreen({}: Props) {
         icon: 'memory',
       });
     } catch (error) {
-      showNotification({
-        title: '模型加载失败',
-        message: error instanceof Error ? error.message : '设备可能不支持当前模型或内存不足。',
-        kind: 'error',
-      });
+      reportError('模型加载失败', error, '设备可能不支持当前模型或内存不足。');
     } finally {
       setLoadingModel(false);
       await refresh();
@@ -179,6 +234,7 @@ export function LocalModelSettingsScreen({}: Props) {
         settings,
       );
       await refresh();
+      setLastError(null);
       showNotification({
         title: '本地整理测试成功',
         message: `${result.summary} · 生成 ${result.items.length} 个条目`,
@@ -187,12 +243,7 @@ export function LocalModelSettingsScreen({}: Props) {
         duration: 5000,
       });
     } catch (error) {
-      showNotification({
-        title: '本地整理测试失败',
-        message: error instanceof Error ? error.message : '模型没有生成可验证的 JSON。',
-        kind: 'error',
-        duration: 5000,
-      });
+      reportError('本地整理测试失败', error, '模型没有生成可验证的 JSON。');
     } finally {
       setTesting(false);
     }
@@ -203,12 +254,15 @@ export function LocalModelSettingsScreen({}: Props) {
     try {
       await deleteLocalModel();
       await refresh();
+      setLastError(null);
       showNotification({
         title: '本地模型已删除',
         message: '已释放运行内存和应用私有目录中的模型文件。',
         kind: 'warning',
         icon: 'delete-outline',
       });
+    } catch (error) {
+      reportError('模型删除失败', error, '无法删除模型文件。');
     } finally {
       setDeleting(false);
     }
@@ -366,6 +420,45 @@ export function LocalModelSettingsScreen({}: Props) {
           </Button>
         )}
       </View>
+
+      {lastError ? (
+        <TouchableRipple
+          onPress={() => copyError(lastError.details)}
+          borderless={false}
+          style={{
+            marginTop: 14,
+            borderRadius: 22,
+            borderWidth: 1,
+            borderColor: theme.colors.error,
+            backgroundColor: theme.colors.errorContainer,
+            overflow: 'hidden',
+          }}
+        >
+          <View style={{ padding: 18 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon source="alert-circle-outline" size={25} color={theme.colors.onErrorContainer} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text variant="titleMedium" style={{ color: theme.colors.onErrorContainer, fontWeight: '900' }}>
+                  {lastError.title}
+                </Text>
+                <Text variant="labelMedium" style={{ marginTop: 2, color: theme.colors.onErrorContainer }}>
+                  点击此卡片复制完整错误信息
+                </Text>
+              </View>
+              <Icon source="content-copy" size={22} color={theme.colors.onErrorContainer} />
+            </View>
+            <Text
+              variant="bodySmall"
+              numberOfLines={5}
+              style={{ marginTop: 12, color: theme.colors.onErrorContainer }}
+            >
+              {lastError.message}
+              {'\n'}
+              {lastError.details}
+            </Text>
+          </View>
+        </TouchableRipple>
+      ) : null}
 
       <View
         style={{
