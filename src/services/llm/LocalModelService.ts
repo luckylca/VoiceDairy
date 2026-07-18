@@ -2,7 +2,13 @@ import RNFS from 'react-native-fs';
 import { initLlama, loadLlamaModelInfo, type LlamaContext } from 'llama.rn';
 import type { AppSettings } from '../../types/settings';
 import type { LlmOrganizeResult } from '../../types/llm';
-import { buildSystemPrompt, buildUserPrompt } from './PromptBuilder';
+import type { ProjectItem } from '../../types/project';
+import {
+  completeProjectRequirements,
+  listProjects,
+  type CompletedProjectRequirement,
+} from '../database/ProjectRepository';
+import { buildProjectContext, buildSystemPrompt, buildUserPrompt } from './PromptBuilder';
 import { parseAndValidateLlmJson } from './JsonRepair';
 
 export const LOCAL_QWEN_MODEL = {
@@ -31,6 +37,21 @@ const STOP_WORDS = [
   '<|end_of_turn|>',
   '<|endoftext|>',
 ];
+
+type NativeChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
+
+export type LocalChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+export type LocalChatResult = {
+  reply: string;
+  completedRequirements: CompletedProjectRequirement[];
+};
 
 export type LocalModelProgress = {
   bytesWritten: number;
@@ -71,25 +92,40 @@ function getErrorMessage(error: unknown): string {
   }
 }
 
-function buildManualChatPrompt(systemPrompt: string, userPrompt: string): string {
-  return [
-    '<|im_start|>system',
-    systemPrompt,
+function cleanModelText(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```json/gi, '')
+    .replace(/```/g, '')
+    .trim();
+}
+
+function buildManualChatPrompt(messages: NativeChatMessage[]): string {
+  const parts = messages.flatMap(message => [
+    `<|im_start|>${message.role}`,
+    message.content,
     '<|im_end|>',
-    '<|im_start|>user',
-    userPrompt,
-    '<|im_end|>',
-    '<|im_start|>assistant',
-    '<think>',
-    '',
-    '</think>',
-    '',
-  ].join('\n');
+  ]);
+  parts.push('<|im_start|>assistant', '<think>', '', '</think>', '');
+  return parts.join('\n');
+}
+
+function extractJsonObject(text: string): Record<string, unknown> | null {
+  const cleaned = cleanModelText(text);
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start < 0 || end < start) return null;
+  try {
+    const parsed = JSON.parse(cleaned.slice(start, end + 1));
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 function parseLocalResult(text: string): LlmOrganizeResult {
   try {
-    return parseAndValidateLlmJson(text);
+    return parseAndValidateLlmJson(cleanModelText(text));
   } catch (error) {
     const preview = text.trim().slice(0, 1200) || '(空输出)';
     throw new Error(`本地模型输出无法解析：${getErrorMessage(error)}\n原始输出预览：${preview}`);
@@ -238,24 +274,15 @@ export async function loadLocalModel(
 
 async function completeWithMessages(
   context: LlamaContext,
-  systemPrompt: string,
-  userPrompt: string,
+  messages: NativeChatMessage[],
+  nPredict: number,
 ): Promise<string> {
   const result = await context.completion({
-    messages: [
-      {
-        role: 'system',
-        content: systemPrompt,
-      },
-      {
-        role: 'user',
-        content: userPrompt,
-      },
-    ],
+    messages: messages as any,
     chat_template_kwargs: {
       enable_thinking: false,
     },
-    n_predict: 640,
+    n_predict: nPredict,
     temperature: 0.1,
     top_k: 20,
     top_p: 0.9,
@@ -266,12 +293,12 @@ async function completeWithMessages(
 
 async function completeWithManualPrompt(
   context: LlamaContext,
-  systemPrompt: string,
-  userPrompt: string,
+  messages: NativeChatMessage[],
+  nPredict: number,
 ): Promise<string> {
   const result = await context.completion({
-    prompt: buildManualChatPrompt(systemPrompt, userPrompt),
-    n_predict: 640,
+    prompt: buildManualChatPrompt(messages),
+    n_predict: nPredict,
     temperature: 0.1,
     top_k: 20,
     top_p: 0.9,
@@ -280,43 +307,29 @@ async function completeWithManualPrompt(
   return result.text ?? '';
 }
 
-export async function organizeTextLocally(
-  text: string,
+async function runCompletionWithFallback(
   settings: AppSettings,
-): Promise<LlmOrganizeResult> {
+  messages: NativeChatMessage[],
+  nPredict: number,
+): Promise<string> {
   await loadLocalModel(settings);
   const context = activeContext;
-  if (!context) {
-    throw new Error('本地模型加载失败');
-  }
-
-  const systemPrompt = buildSystemPrompt(settings.systemPrompt);
-  const userPrompt = buildUserPrompt(text);
+  if (!context) throw new Error('本地模型加载失败');
 
   try {
-    const output = await completeWithMessages(context, systemPrompt, userPrompt);
-    if (!output.trim()) {
-      throw new Error('聊天模板推理返回空文本');
-    }
-    return parseLocalResult(output);
+    const output = await completeWithMessages(context, messages, nPredict);
+    if (!output.trim()) throw new Error('聊天模板推理返回空文本');
+    return output;
   } catch (chatError) {
     const chatMessage = getErrorMessage(chatError);
-
     try {
-      // A native completion failure may leave the current llama.cpp context unusable.
-      // Recreate it before the plain-text fallback instead of reusing damaged KV state.
       await releaseLocalModel();
       await loadLocalModel(settings);
       const fallbackContext = activeContext;
-      if (!fallbackContext) {
-        throw new Error('重新创建模型上下文后仍为空');
-      }
-
-      const output = await completeWithManualPrompt(fallbackContext, systemPrompt, userPrompt);
-      if (!output.trim()) {
-        throw new Error('纯文本回退推理返回空文本');
-      }
-      return parseLocalResult(output);
+      if (!fallbackContext) throw new Error('重新创建模型上下文后仍为空');
+      const output = await completeWithManualPrompt(fallbackContext, messages, nPredict);
+      if (!output.trim()) throw new Error('纯文本回退推理返回空文本');
+      return output;
     } catch (fallbackError) {
       throw new Error(
         `本地推理两种路径均失败。聊天模板路径：${chatMessage}；纯文本 ChatML 回退：${getErrorMessage(
@@ -325,4 +338,102 @@ export async function organizeTextLocally(
       );
     }
   }
+}
+
+export async function organizeTextLocally(
+  text: string,
+  settings: AppSettings,
+  suppliedProjects?: ProjectItem[],
+): Promise<LlmOrganizeResult> {
+  const projects = suppliedProjects ?? (await listProjects());
+  const messages: NativeChatMessage[] = [
+    {
+      role: 'system',
+      content: buildSystemPrompt(settings.systemPrompt, undefined, projects),
+    },
+    {
+      role: 'user',
+      content: buildUserPrompt(text),
+    },
+  ];
+  const output = await runCompletionWithFallback(settings, messages, 640);
+  return parseLocalResult(output);
+}
+
+function buildLocalChatSystemPrompt(projects: ProjectItem[]): string {
+  return `你是 VoiceDairy 内置的本地项目助手。你可以回答用户关于项目、项目说明、需求和完成进度的问题。
+
+当用户明确表示某条需求已经完成时，你可以请求应用勾选它。你必须遵守：
+1. 只能使用下面项目上下文中真实存在的 requirement_id；
+2. 只有用户明确表达“完成了、做完了、已经实现”等完成事实时才能勾选；
+3. 用户只是询问、计划、讨论或表达不确定时，complete_requirement_ids 必须为空；
+4. 标题相似但不能确定是哪一条时，先向用户追问，不能猜；
+5. 不得创建、删除或恢复需求；
+6. 只输出一个 JSON 对象，不能输出 Markdown。
+
+输出格式：
+{"reply":"给用户的自然中文回复","complete_requirement_ids":["requirement_id"]}
+
+当前全部项目和需求：
+${buildProjectContext(projects)}`;
+}
+
+function parseLocalChatResult(text: string): { reply: string; requirementIds: string[] } {
+  const cleaned = cleanModelText(text);
+  const payload = extractJsonObject(cleaned);
+  if (!payload) {
+    return {
+      reply: cleaned || '本地模型没有返回内容。',
+      requirementIds: [],
+    };
+  }
+
+  const reply = typeof payload.reply === 'string' ? payload.reply.trim() : '';
+  const rawIds = Array.isArray(payload.complete_requirement_ids)
+    ? payload.complete_requirement_ids
+    : [];
+  const requirementIds = rawIds
+    .filter((item): item is string => typeof item === 'string')
+    .map(item => item.trim())
+    .filter(Boolean);
+
+  return {
+    reply: reply || '已处理你的消息。',
+    requirementIds: [...new Set(requirementIds)],
+  };
+}
+
+export async function chatWithLocalModel(
+  text: string,
+  history: LocalChatMessage[],
+  settings: AppSettings,
+): Promise<LocalChatResult> {
+  const normalized = text.trim();
+  if (!normalized) throw new Error('请输入对话内容');
+
+  const projects = await listProjects();
+  const recentHistory = history.slice(-8);
+  const messages: NativeChatMessage[] = [
+    {
+      role: 'system',
+      content: buildLocalChatSystemPrompt(projects),
+    },
+    ...recentHistory.map(message => ({
+      role: message.role,
+      content: message.content,
+    })),
+    {
+      role: 'user',
+      content: normalized,
+    },
+  ];
+
+  const output = await runCompletionWithFallback(settings, messages, 512);
+  const parsed = parseLocalChatResult(output);
+  const completedRequirements = await completeProjectRequirements(parsed.requirementIds);
+
+  return {
+    reply: parsed.reply,
+    completedRequirements,
+  };
 }
