@@ -6,6 +6,9 @@ import type { RootStackParamList } from './types';
 import { VoiceInputScreen } from '../screens/VoiceInputScreen';
 import { PromptSettingsScreen } from '../screens/PromptSettingsScreen';
 import { LocalModelSettingsScreen } from '../screens/LocalModelSettingsScreen';
+import { LocalModelChatScreen } from '../screens/LocalModelChatScreen';
+import { DeveloperOptionsScreen } from '../screens/DeveloperOptionsScreen';
+import { AboutScreen } from '../screens/AboutScreen';
 import { CategorySettingsScreen } from '../screens/CategorySettingsScreen';
 import { ProjectSettingsScreen } from '../screens/ProjectSettingsScreen';
 import { ProjectDetailScreen } from '../screens/ProjectDetailScreen';
@@ -49,11 +52,10 @@ export function RootNavigator() {
         <Stack.Screen name="MainTabs" component={BottomTabs} options={{ headerShown: false }} />
         <Stack.Screen name="VoiceInput" component={VoiceInputScreen} options={{ title: '新建记录' }} />
         <Stack.Screen name="PromptSettings" component={PromptSettingsScreen} options={{ title: '整理提示词' }} />
-        <Stack.Screen
-          name="LocalModelSettings"
-          component={LocalModelSettingsScreen}
-          options={{ title: '本地模型' }}
-        />
+        <Stack.Screen name="LocalModelSettings" component={LocalModelSettingsScreen} options={{ title: '本地模型管理' }} />
+        <Stack.Screen name="LocalModelChat" component={LocalModelChatScreen} options={{ title: '本地模型对话' }} />
+        <Stack.Screen name="DeveloperOptions" component={DeveloperOptionsScreen} options={{ title: '开发者选项' }} />
+        <Stack.Screen name="About" component={AboutScreen} options={{ title: '关于 VoiceDairy' }} />
         <Stack.Screen name="CategorySettings" component={CategorySettingsScreen} options={{ title: '分类设置' }} />
         <Stack.Screen name="ProjectSettings" component={ProjectSettingsScreen} options={{ title: '项目设置' }} />
         <Stack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: '项目详情' }} />
