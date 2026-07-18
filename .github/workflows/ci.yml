@@ -20,11 +20,26 @@ jobs:
           node --version
           npm --version
 
-      - name: Validate proxy installer syntax
-        run: node --check scripts/install-with-proxy.js
+      - name: Validate installer scripts
+        run: |
+          node --check scripts/install-with-proxy.js
+          node --check scripts/patch-llama-rn-bridge.js
 
       - name: Install dependencies
         run: npm install --silent
+
+      - name: Verify llama legacy bridge patch
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const source = fs.readFileSync('node_modules/llama.rn/src/NativeRNLlama.ts', 'utf8');
+          if (!source.includes('NativeModules.RNLlama')) {
+            throw new Error('llama.rn legacy NativeModules fallback was not installed');
+          }
+          if (!fs.existsSync('node_modules/llama.rn/android/src/main/java/com/rnllama/NativeRNLlamaSpec.java')) {
+            throw new Error('llama.rn bridge compatibility spec is missing');
+          }
+          NODE
 
       - name: Run TypeScript check
         run: |
