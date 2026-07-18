@@ -11,6 +11,9 @@ export type RootStackParamList = {
   VoiceInput: undefined;
   PromptSettings: undefined;
   LocalModelSettings: undefined;
+  LocalModelChat: undefined;
+  DeveloperOptions: undefined;
+  About: undefined;
   CategorySettings: undefined;
   ProjectSettings: undefined;
   ProjectDetail: { projectId: string };
