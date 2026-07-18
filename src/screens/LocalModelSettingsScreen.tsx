@@ -13,7 +13,7 @@ import {
   useTheme,
 } from 'react-native-paper';
 import type { RootStackParamList } from '../navigation/types';
-import type { AppSettings, OrganizerProvider } from '../types/settings';
+import type { AppSettings } from '../types/settings';
 import { defaultSettings, loadSettings, saveSettings } from '../services/settings/SettingsService';
 import {
   LOCAL_QWEN_MODEL,
@@ -22,14 +22,13 @@ import {
   downloadLocalModel,
   getLocalModelStatus,
   loadLocalModel,
-  organizeTextLocally,
   releaseLocalModel,
   type LocalModelStatus,
 } from '../services/llm/LocalModelService';
 import { copyText } from '../services/system/ClipboardService';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'LocalModelSettings'>;
+ type Props = NativeStackScreenProps<RootStackParamList, 'LocalModelSettings'>;
 
 type LastError = {
   title: string;
@@ -72,7 +71,7 @@ function buildErrorDetails(
     .join('\n');
 }
 
-export function LocalModelSettingsScreen({}: Props) {
+export function LocalModelSettingsScreen({ navigation }: Props) {
   const theme = useTheme();
   const { showNotification } = useFluidNotification();
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
@@ -83,7 +82,6 @@ export function LocalModelSettingsScreen({}: Props) {
   const [downloadTotal, setDownloadTotal] = useState(LOCAL_QWEN_MODEL.approximateBytes);
   const [loadingModel, setLoadingModel] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
-  const [testing, setTesting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lastError, setLastError] = useState<LastError | null>(null);
 
@@ -127,20 +125,6 @@ export function LocalModelSettingsScreen({}: Props) {
     const next = { ...settings, ...patch };
     setSettings(next);
     await saveSettings(next);
-  }
-
-  async function handleProviderChange(value: string) {
-    const organizerProvider = value as OrganizerProvider;
-    await persistPatch({ organizerProvider });
-    showNotification({
-      title: organizerProvider === 'local' ? '已启用本地整理' : '已切换到云端整理',
-      message:
-        organizerProvider === 'local'
-          ? '语音仍由 SenseVoice 转写，转写文本将交给手机内的 Qwen 整理。'
-          : '整理文本将发送到设置中的兼容 API。',
-      kind: 'success',
-      icon: organizerProvider === 'local' ? 'cellphone-cog' : 'cloud-outline',
-    });
   }
 
   async function handleAccelerationChange(value: string) {
@@ -226,29 +210,6 @@ export function LocalModelSettingsScreen({}: Props) {
     });
   }
 
-  async function handleTest() {
-    setTesting(true);
-    try {
-      const result = await organizeTextLocally(
-        '明天下午三点提醒我检查 VoiceDairy 的本地模型，并把优化启动速度加入项目需求。',
-        settings,
-      );
-      await refresh();
-      setLastError(null);
-      showNotification({
-        title: '本地整理测试成功',
-        message: `${result.summary} · 生成 ${result.items.length} 个条目`,
-        kind: 'success',
-        icon: 'check-decagram-outline',
-        duration: 5000,
-      });
-    } catch (error) {
-      reportError('本地整理测试失败', error, '模型没有生成可验证的 JSON。');
-    } finally {
-      setTesting(false);
-    }
-  }
-
   async function handleDelete() {
     setDeleting(true);
     try {
@@ -283,48 +244,21 @@ export function LocalModelSettingsScreen({}: Props) {
           backgroundColor: theme.colors.surface,
         }}
       >
-        <Text variant="titleLarge" style={{ fontWeight: '900' }}>
-          智能整理方式
-        </Text>
-        <Text variant="bodyMedium" style={{ marginTop: 6, color: theme.colors.onSurfaceVariant }}>
-          SenseVoice 始终在本地完成语音转文字；这里决定由云端 API 还是本地 Qwen 整理文本。
-        </Text>
-        <SegmentedButtons
-          value={settings.organizerProvider}
-          onValueChange={handleProviderChange}
-          buttons={[
-            { value: 'cloud', label: '云端 API', icon: 'cloud-outline' },
-            { value: 'local', label: '本地 Qwen', icon: 'cellphone-cog' },
-          ]}
-          style={{ marginTop: 16 }}
-        />
-      </View>
-
-      <View
-        style={{
-          marginTop: 14,
-          padding: 18,
-          borderRadius: 22,
-          borderWidth: 1,
-          borderColor: theme.colors.outlineVariant,
-          backgroundColor: theme.colors.surface,
-        }}
-      >
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View
             style={{
-              width: 48,
-              height: 48,
-              borderRadius: 16,
+              width: 50,
+              height: 50,
+              borderRadius: 17,
               alignItems: 'center',
               justifyContent: 'center',
               backgroundColor: theme.colors.primaryContainer,
             }}
           >
-            <Icon source="brain" size={27} color={theme.colors.onPrimaryContainer} />
+            <Icon source="brain" size={28} color={theme.colors.onPrimaryContainer} />
           </View>
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text variant="titleMedium" style={{ fontWeight: '900' }}>
+            <Text variant="titleLarge" style={{ fontWeight: '900' }}>
               {LOCAL_QWEN_MODEL.displayName}
             </Text>
             <Text variant="bodySmall" style={{ marginTop: 3, color: theme.colors.onSurfaceVariant }}>
@@ -360,7 +294,7 @@ export function LocalModelSettingsScreen({}: Props) {
               mode="contained"
               icon="memory"
               loading={loadingModel}
-              disabled={loadingModel || testing}
+              disabled={loadingModel}
               onPress={handleLoad}
               style={{ borderRadius: 14 }}
               contentStyle={{ minHeight: 48 }}
@@ -377,15 +311,17 @@ export function LocalModelSettingsScreen({}: Props) {
             ) : null}
             <Button
               mode="outlined"
-              icon="flask-outline"
-              loading={testing}
-              disabled={loadingModel || testing}
-              onPress={handleTest}
+              icon="message-text-outline"
+              disabled={loadingModel}
+              onPress={() => navigation.navigate('LocalModelChat')}
               style={{ marginTop: 10, borderRadius: 14 }}
               contentStyle={{ minHeight: 48 }}
             >
-              测试本地整理
+              打开本地模型对话
             </Button>
+            <Text variant="bodySmall" style={{ marginTop: 8, color: theme.colors.onSurfaceVariant }}>
+              对话页会读取全部项目和需求；当你明确说某项已经完成时，可自动勾选对应需求。
+            </Text>
             {status.loaded ? (
               <Button
                 mode="outlined"
@@ -401,7 +337,7 @@ export function LocalModelSettingsScreen({}: Props) {
               icon="delete-outline"
               textColor={theme.colors.error}
               loading={deleting}
-              disabled={deleting || loadingModel || testing}
+              disabled={deleting || loadingModel}
               onPress={handleDelete}
               style={{ marginTop: 6 }}
             >
@@ -485,7 +421,7 @@ export function LocalModelSettingsScreen({}: Props) {
           ]}
         />
         <Text variant="bodySmall" style={{ marginTop: 8, color: theme.colors.onSurfaceVariant }}>
-          GPU 目前主要适用于支持 OpenCL 的部分高通 Adreno 设备；失败时可切回 CPU。
+          GPU 主要适用于支持 OpenCL 的部分高通 Adreno 设备；失败时请切回 CPU。
         </Text>
 
         <Text variant="labelLarge" style={{ marginTop: 18, marginBottom: 9 }}>
@@ -501,7 +437,7 @@ export function LocalModelSettingsScreen({}: Props) {
           ]}
         />
         <Text variant="bodySmall" style={{ marginTop: 8, color: theme.colors.onSurfaceVariant }}>
-          普通语音笔记建议使用 2048；更长上下文会增加内存占用和初始化时间。
+          项目与需求会加入提示词。项目较多时建议使用 2048 或 4096，但更长上下文会增加内存占用。
         </Text>
       </View>
     </ScrollView>
