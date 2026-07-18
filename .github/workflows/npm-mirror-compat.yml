@@ -6,6 +6,7 @@ on:
       - '.npmrc'
       - 'package.json'
       - 'scripts/patch-llama-rn-bridge.js'
+  workflow_dispatch:
 
 jobs:
   install-with-user-mirror:
