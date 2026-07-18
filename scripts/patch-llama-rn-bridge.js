@@ -9,7 +9,8 @@
  * VoiceDairy intentionally stays on bridge mode for this proof of concept so
  * SenseVoice, PagerView and the existing 120 Hz native code are not forced
  * through a framework-wide React Native upgrade. This script restores the
- * tiny generated Java base class required by llama.rn's bridge path.
+ * generated Java base class and makes the JavaScript entry resolve the legacy
+ * NativeModules bridge when TurboModuleRegistry does not expose RNLlama.
  */
 
 const fs = require('fs');
@@ -28,6 +29,7 @@ const specPath = path.join(
   'rnllama',
   'NativeRNLlamaSpec.java',
 );
+const nativeModulePath = path.join(packageRoot, 'src', 'NativeRNLlama.ts');
 
 if (!fs.existsSync(packageJsonPath)) {
   console.error('[VoiceDairy llama.rn] package is missing; run npm install again.');
@@ -43,7 +45,7 @@ if (installed.version !== '0.12.6') {
   process.exit(1);
 }
 
-const source = `package com.rnllama;
+const specSource = `package com.rnllama;
 
 import androidx.annotation.NonNull;
 
@@ -70,6 +72,30 @@ public abstract class NativeRNLlamaSpec extends ReactContextBaseJavaModule {
 }
 `;
 
+const nativeModuleSource = `import type { TurboModule } from 'react-native'
+import { NativeModules, TurboModuleRegistry } from 'react-native'
+
+export interface Spec extends TurboModule {
+  install(): Promise<boolean>
+}
+
+const turboModule = TurboModuleRegistry.get<Spec>('RNLlama')
+const legacyModule = NativeModules.RNLlama as Spec | undefined
+
+const missingModule: Spec = {
+  async install(): Promise<boolean> {
+    throw new Error(
+      '[RNLlama] Android native module is unavailable. Rebuild and reinstall the APK; reloading Metro cannot add native modules.',
+    )
+  },
+}
+
+export default turboModule ?? legacyModule ?? missingModule
+`;
+
 fs.mkdirSync(path.dirname(specPath), { recursive: true });
-fs.writeFileSync(specPath, source, 'utf8');
+fs.writeFileSync(specPath, specSource, 'utf8');
+fs.writeFileSync(nativeModulePath, nativeModuleSource, 'utf8');
+
 console.log('[VoiceDairy llama.rn] bridge compatibility spec installed.');
+console.log('[VoiceDairy llama.rn] legacy NativeModules fallback installed.');
