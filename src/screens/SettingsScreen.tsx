@@ -106,7 +106,7 @@ export function SettingsScreen() {
         organizerProvider === 'local'
           ? localModelStatus?.exists
             ? '识别后的文本会在手机上整理。'
-            : '请进入固定显示的本地模型管理卡片完成下载。'
+            : '请在下方进入本地模型管理并下载模型。'
           : '识别后的文本会发送到配置的兼容 API。',
       kind: organizerProvider === 'local' && !localModelStatus?.exists ? 'warning' : 'success',
       icon: organizerProvider === 'local' ? 'cellphone' : 'cloud-outline',
@@ -265,45 +265,6 @@ export function SettingsScreen() {
             style={{ marginTop: 14 }}
           />
 
-          <MotionTouchable
-            onPress={() => navigation.navigate('LocalModelSettings')}
-            borderRadius={18}
-            style={{ marginTop: 14 }}
-            contentStyle={[
-              styles.fixedModelCard,
-              {
-                backgroundColor:
-                  settings.organizerProvider === 'local'
-                    ? theme.colors.primaryContainer
-                    : theme.colors.surfaceVariant,
-                borderColor:
-                  settings.organizerProvider === 'local'
-                    ? theme.colors.primary
-                    : theme.colors.outlineVariant,
-              },
-            ]}
-          >
-            <View style={styles.settingRow}>
-              <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}> 
-                <Icon source="brain" size={24} color={theme.colors.onTertiaryContainer} />
-              </View>
-              <View style={styles.rowText}>
-                <Text variant="titleMedium" style={{ fontWeight: '900' }}>
-                  本地模型管理
-                </Text>
-                <Text variant="bodySmall" style={{ marginTop: 3, color: theme.colors.onSurfaceVariant }}>
-                  {localModelStatus?.exists
-                    ? `${localModelStatus.loaded ? '已加载' : '已下载'} · ${formatBytes(localModelStatus.bytes)}`
-                    : 'Qwen3.5-0.8B Q4_0 · 约563MB · 尚未下载'}
-                </Text>
-                <Text variant="labelSmall" style={{ marginTop: 4, color: theme.colors.primary }}>
-                  始终可用 · 包含独立对话测试入口
-                </Text>
-              </View>
-              <Icon source="chevron-right" size={23} color={theme.colors.onSurfaceVariant} />
-            </View>
-          </MotionTouchable>
-
           {settings.organizerProvider === 'cloud' ? (
             <View style={{ marginTop: 4 }}>
               <TextInput
@@ -356,15 +317,48 @@ export function SettingsScreen() {
               </View>
             </View>
           ) : (
-            <Text variant="bodySmall" style={{ marginTop: 12, color: theme.colors.onSurfaceVariant }}>
-              本地模式不会发送识别文本。整理提示词和本地对话都会读取当前全部项目与项目需求。
-            </Text>
+            <View style={{ marginTop: 14 }}>
+              <MotionTouchable
+                onPress={() => navigation.navigate('LocalModelSettings')}
+                borderRadius={18}
+                contentStyle={[
+                  styles.localModelCard,
+                  {
+                    backgroundColor: theme.colors.primaryContainer,
+                    borderColor: theme.colors.primary,
+                  },
+                ]}
+              >
+                <View style={styles.settingRow}>
+                  <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}> 
+                    <Icon source="brain" size={24} color={theme.colors.onTertiaryContainer} />
+                  </View>
+                  <View style={styles.rowText}>
+                    <Text variant="titleMedium" style={{ fontWeight: '900' }}>
+                      本地模型管理
+                    </Text>
+                    <Text variant="bodySmall" style={{ marginTop: 3, color: theme.colors.onSurfaceVariant }}>
+                      {localModelStatus?.exists
+                        ? `${localModelStatus.loaded ? '已加载' : '已下载'} · ${formatBytes(localModelStatus.bytes)}`
+                        : 'Qwen3.5-0.8B Q4_0 · 约563MB · 尚未下载'}
+                    </Text>
+                    <Text variant="labelSmall" style={{ marginTop: 4, color: theme.colors.primary }}>
+                      下载、加载、运行设置与本地对话
+                    </Text>
+                  </View>
+                  <Icon source="chevron-right" size={23} color={theme.colors.onSurfaceVariant} />
+                </View>
+              </MotionTouchable>
+              <Text variant="bodySmall" style={{ marginTop: 12, color: theme.colors.onSurfaceVariant }}>
+                本地对话每次发送都会读取手机中当前保存的全部项目、项目说明、需求和完成状态。
+              </Text>
+            </View>
           )}
 
           <SettingsLink
             icon="application-edit-outline"
             title="整理提示词"
-            description="云端和本地整理共用规则，并自动附加全部项目上下文"
+            description="云端和本地整理共用规则，并自动附加当前全部项目内容"
             onPress={() => navigation.navigate('PromptSettings')}
           />
         </View>
@@ -495,7 +489,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
   },
-  fixedModelCard: {
+  localModelCard: {
     borderRadius: 18,
     borderWidth: 1,
     paddingVertical: 14,
