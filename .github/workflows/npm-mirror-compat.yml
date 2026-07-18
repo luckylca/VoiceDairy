@@ -1,0 +1,41 @@
+name: npm mirror compatibility
+
+on:
+  pull_request:
+    paths:
+      - '.npmrc'
+      - 'package.json'
+      - 'scripts/patch-llama-rn-bridge.js'
+  workflow_dispatch:
+
+jobs:
+  install-with-user-mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Simulate stale user-level npm mirror
+        run: |
+          cat > "$RUNNER_TEMP/user.npmrc" <<'EOF'
+          registry=https://registry.npmmirror.com/
+          replace-registry-host=always
+          EOF
+
+      - name: Confirm project npm config wins
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/user.npmrc
+        run: |
+          test "$(npm config get registry)" = "https://registry.npmjs.org/"
+          test "$(npm config get replace-registry-host)" = "never"
+
+      - name: Install dependencies through official registry
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/user.npmrc
+        run: npm install --silent
+
+      - name: Verify llama.rn version
+        run: node -e "const p=require('./node_modules/llama.rn/package.json'); if(p.version!=='0.12.6') process.exit(1)"
