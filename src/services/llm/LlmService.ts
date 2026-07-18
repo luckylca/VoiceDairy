@@ -1,5 +1,7 @@
 import type { AppSettings } from '../../types/settings';
 import type { LlmOrganizeResult } from '../../types/llm';
+import type { ProjectItem } from '../../types/project';
+import { listProjects } from '../database/ProjectRepository';
 import { buildSystemPrompt, buildUserPrompt } from './PromptBuilder';
 import { parseAndValidateLlmJson } from './JsonRepair';
 import { organizeTextLocally } from './LocalModelService';
@@ -30,10 +32,7 @@ function buildApiHeaders(apiKey: string): Record<string, string> {
 }
 
 function extractModelIds(payload: unknown): string[] {
-  if (!payload || typeof payload !== 'object') {
-    return [];
-  }
-
+  if (!payload || typeof payload !== 'object') return [];
   const record = payload as Record<string, unknown>;
   const candidates = Array.isArray(record.data)
     ? record.data
@@ -43,9 +42,7 @@ function extractModelIds(payload: unknown): string[] {
 
   const ids = candidates
     .map(item => {
-      if (typeof item === 'string') {
-        return item.trim();
-      }
+      if (typeof item === 'string') return item.trim();
       if (item && typeof item === 'object') {
         const id = (item as Record<string, unknown>).id;
         const name = (item as Record<string, unknown>).name;
@@ -61,9 +58,7 @@ function extractModelIds(payload: unknown): string[] {
 
 export async function fetchAvailableModels(settings: AppSettings): Promise<string[]> {
   const baseUrl = normalizeApiBaseUrl(settings.apiBaseUrl);
-  if (!baseUrl) {
-    throw new Error('请先填写 API Base URL');
-  }
+  if (!baseUrl) throw new Error('请先填写 API Base URL');
 
   const response = await fetch(`${baseUrl}/models`, {
     method: 'GET',
@@ -76,9 +71,7 @@ export async function fetchAvailableModels(settings: AppSettings): Promise<strin
   }
 
   const models = extractModelIds(await response.json());
-  if (models.length === 0) {
-    throw new Error('接口返回成功，但没有找到可用模型');
-  }
+  if (models.length === 0) throw new Error('接口返回成功，但没有找到可用模型');
   return models;
 }
 
@@ -117,6 +110,7 @@ function buildDemoResult(text: string): LlmOrganizeResult {
 async function organizeTextWithCloud(
   text: string,
   settings: AppSettings,
+  projects: ProjectItem[],
 ): Promise<LlmOrganizeResult> {
   if (!settings.apiBaseUrl.trim() || !settings.modelName.trim()) {
     throw new Error('请先在设置中填写云端 API 地址和模型名');
@@ -133,7 +127,7 @@ async function organizeTextWithCloud(
       messages: [
         {
           role: 'system',
-          content: buildSystemPrompt(settings.systemPrompt),
+          content: buildSystemPrompt(settings.systemPrompt, undefined, projects),
         },
         {
           role: 'user',
@@ -150,7 +144,6 @@ async function organizeTextWithCloud(
 
   const payload = await response.json();
   const content = payload?.choices?.[0]?.message?.content;
-
   if (typeof content !== 'string') {
     throw new Error('大模型返回格式异常：缺少 message.content');
   }
@@ -159,12 +152,11 @@ async function organizeTextWithCloud(
 
 export async function organizeText(options: OrganizeTextOptions): Promise<LlmOrganizeResult> {
   const { text, settings, demoMode } = options;
+  if (demoMode) return buildDemoResult(text);
 
-  if (demoMode) {
-    return buildDemoResult(text);
-  }
+  const projects = await listProjects();
   if (settings.organizerProvider === 'local') {
-    return organizeTextLocally(text, settings);
+    return organizeTextLocally(text, settings, projects);
   }
-  return organizeTextWithCloud(text, settings);
+  return organizeTextWithCloud(text, settings, projects);
 }
