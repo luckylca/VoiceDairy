@@ -20,6 +20,9 @@ jobs:
           node --version
           npm --version
 
+      - name: Validate proxy installer syntax
+        run: node --check scripts/install-with-proxy.js
+
       - name: Install dependencies
         run: npm install --silent
 
