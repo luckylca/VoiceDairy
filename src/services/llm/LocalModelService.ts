@@ -20,45 +20,17 @@ const MODEL_PATH = `${MODEL_DIRECTORY}/${LOCAL_QWEN_MODEL.fileName}`;
 const PARTIAL_MODEL_PATH = `${MODEL_PATH}.download`;
 const MIN_VALID_MODEL_BYTES = 500 * 1024 * 1024;
 
-const ORGANIZE_JSON_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['summary', 'items'],
-  properties: {
-    summary: { type: 'string' },
-    items: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 8,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: [
-          'type',
-          'title',
-          'content',
-          'datetime',
-          'due_date',
-          'priority',
-          'tags',
-          'project',
-          'confidence',
-        ],
-        properties: {
-          type: { type: 'string', enum: ['idea', 'todo', 'project', 'reminder'] },
-          title: { type: 'string' },
-          content: { type: 'string' },
-          datetime: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-          due_date: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-          priority: { type: 'string', enum: ['low', 'normal', 'high'] },
-          tags: { type: 'array', items: { type: 'string' }, maxItems: 8 },
-          project: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-          confidence: { type: 'number', minimum: 0, maximum: 1 },
-        },
-      },
-    },
-  },
-} as const;
+const STOP_WORDS = [
+  '</s>',
+  '<|end|>',
+  '<|eot_id|>',
+  '<|end_of_text|>',
+  '<|im_end|>',
+  '<|EOT|>',
+  '<|END_OF_TURN_TOKEN|>',
+  '<|end_of_turn|>',
+  '<|endoftext|>',
+];
 
 export type LocalModelProgress = {
   bytesWritten: number;
@@ -87,6 +59,41 @@ function buildContextKey(settings: AppSettings): string {
 function asPercent(bytesWritten: number, contentLength: number): number {
   if (contentLength <= 0) return 0;
   return Math.max(0, Math.min(100, (bytesWritten / contentLength) * 100));
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function buildManualChatPrompt(systemPrompt: string, userPrompt: string): string {
+  return [
+    '<|im_start|>system',
+    systemPrompt,
+    '<|im_end|>',
+    '<|im_start|>user',
+    userPrompt,
+    '<|im_end|>',
+    '<|im_start|>assistant',
+    '<think>',
+    '',
+    '</think>',
+    '',
+  ].join('\n');
+}
+
+function parseLocalResult(text: string): LlmOrganizeResult {
+  try {
+    return parseAndValidateLlmJson(text);
+  } catch (error) {
+    const preview = text.trim().slice(0, 1200) || '(空输出)';
+    throw new Error(`本地模型输出无法解析：${getErrorMessage(error)}\n原始输出预览：${preview}`);
+  }
 }
 
 export function getLocalModelPath(): string {
@@ -229,47 +236,93 @@ export async function loadLocalModel(
   return getLocalModelStatus();
 }
 
+async function completeWithMessages(
+  context: LlamaContext,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<string> {
+  const result = await context.completion({
+    messages: [
+      {
+        role: 'system',
+        content: systemPrompt,
+      },
+      {
+        role: 'user',
+        content: userPrompt,
+      },
+    ],
+    chat_template_kwargs: {
+      enable_thinking: false,
+    },
+    n_predict: 640,
+    temperature: 0.1,
+    top_k: 20,
+    top_p: 0.9,
+    stop: STOP_WORDS,
+  });
+  return result.text ?? '';
+}
+
+async function completeWithManualPrompt(
+  context: LlamaContext,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<string> {
+  const result = await context.completion({
+    prompt: buildManualChatPrompt(systemPrompt, userPrompt),
+    n_predict: 640,
+    temperature: 0.1,
+    top_k: 20,
+    top_p: 0.9,
+    stop: STOP_WORDS,
+  });
+  return result.text ?? '';
+}
+
 export async function organizeTextLocally(
   text: string,
   settings: AppSettings,
 ): Promise<LlmOrganizeResult> {
   await loadLocalModel(settings);
-  if (!activeContext) {
+  const context = activeContext;
+  if (!context) {
     throw new Error('本地模型加载失败');
   }
 
-  await activeContext.clearCache(true);
-  const result = await activeContext.completion({
-    messages: [
-      {
-        role: 'system',
-        content: buildSystemPrompt(settings.systemPrompt),
-      },
-      {
-        role: 'user',
-        content: buildUserPrompt(text),
-      },
-    ],
-    jinja: true,
-    force_pure_content: true,
-    enable_thinking: false,
-    reasoning_format: 'none',
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        strict: true,
-        schema: ORGANIZE_JSON_SCHEMA,
-      },
-    },
-    n_predict: 768,
-    temperature: 0.1,
-    top_k: 20,
-    top_p: 0.9,
-    stop: ['<|im_end|>', '<|endoftext|>'],
-  });
+  const systemPrompt = buildSystemPrompt(settings.systemPrompt);
+  const userPrompt = buildUserPrompt(text);
 
-  if (!result.text?.trim()) {
-    throw new Error('本地模型没有返回整理结果');
+  try {
+    const output = await completeWithMessages(context, systemPrompt, userPrompt);
+    if (!output.trim()) {
+      throw new Error('聊天模板推理返回空文本');
+    }
+    return parseLocalResult(output);
+  } catch (chatError) {
+    const chatMessage = getErrorMessage(chatError);
+
+    try {
+      // A native completion failure may leave the current llama.cpp context unusable.
+      // Recreate it before the plain-text fallback instead of reusing damaged KV state.
+      await releaseLocalModel();
+      await loadLocalModel(settings);
+      const fallbackContext = activeContext;
+      if (!fallbackContext) {
+        throw new Error('重新创建模型上下文后仍为空');
+      }
+
+      const output = await completeWithManualPrompt(fallbackContext, systemPrompt, userPrompt);
+      if (!output.trim()) {
+        throw new Error('纯文本回退推理返回空文本');
+      }
+      return parseLocalResult(output);
+    } catch (fallbackError) {
+      throw new Error(
+        `本地推理两种路径均失败。聊天模板路径：${chatMessage}；纯文本 ChatML 回退：${getErrorMessage(
+          fallbackError,
+        )}`,
+      );
+    }
   }
-  return parseAndValidateLlmJson(result.text);
 }
