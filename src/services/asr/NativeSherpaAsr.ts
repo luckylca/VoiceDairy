@@ -17,6 +17,11 @@ export type AsrStateChangeEvent = {
   message?: string;
 };
 
+export type AsrAmplitudeEvent = {
+  amplitude: number;
+  timestamp: number;
+};
+
 type NativeSherpaAsrModule = {
   init(options: AsrInitOptions): Promise<void>;
   startRecord(): Promise<void>;
@@ -50,3 +55,14 @@ export const SherpaAsr: NativeSherpaAsrModule = {
 };
 
 export const SherpaAsrEvents = nativeModule ? new NativeEventEmitter(NativeModules.SherpaAsr) : null;
+
+export function subscribeAsrAmplitude(listener: (event: AsrAmplitudeEvent) => void): () => void {
+  const subscription = SherpaAsrEvents?.addListener('onAsrAmplitude', (event: AsrAmplitudeEvent) => {
+    listener({
+      amplitude: Math.max(0, Math.min(1, Number(event.amplitude) || 0)),
+      timestamp: Number(event.timestamp) || Date.now(),
+    });
+  });
+
+  return () => subscription?.remove();
+}
