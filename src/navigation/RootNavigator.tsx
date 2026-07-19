@@ -95,7 +95,6 @@ export function RootNavigator() {
           headerTintColor: isTech ? techTokens.colors.text : theme.colors.onSurface,
           headerTitleStyle: {
             fontWeight: '900',
-            letterSpacing: isTech ? 0.45 : 0,
           },
           headerBackTitleVisible: false,
           contentStyle: {
