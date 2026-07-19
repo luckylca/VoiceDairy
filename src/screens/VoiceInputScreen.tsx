@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Button, HelperText, Switch, Text, TextInput, useTheme } from 'react-native-paper';
+import { Button, HelperText, Text, TextInput, useTheme } from 'react-native-paper';
 import type { AppSettings } from '../types/settings';
 import type { RecordSource } from '../types/record';
 import { loadSettings } from '../services/settings/SettingsService';
@@ -9,7 +9,6 @@ import { organizeText } from '../services/llm/LlmService';
 import { getLocalModelStatus } from '../services/llm/LocalModelService';
 import { saveOrganizedResult } from '../services/records/CreateRecordService';
 import { initAsr, startVoiceRecord, stopVoiceRecord } from '../services/asr/AsrService';
-import { MotionTouchable } from '../components/MotionTouchable';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 
 export function VoiceInputScreen() {
@@ -20,7 +19,6 @@ export function VoiceInputScreen() {
   const [text, setText] = useState('');
   const [inputSource, setInputSource] = useState<RecordSource>('text');
   const [loading, setLoading] = useState(false);
-  const [demoMode, setDemoMode] = useState(false);
   const [recording, setRecording] = useState(false);
   const [asrReady, setAsrReady] = useState(false);
 
@@ -29,15 +27,12 @@ export function VoiceInputScreen() {
   }, []);
 
   async function ensureAsrReady() {
-    if (asrReady) {
-      return;
-    }
+    if (asrReady) return;
 
     await initAsr({
       numThreads: 2,
       language: 'auto',
     });
-
     setAsrReady(true);
   }
 
@@ -84,9 +79,8 @@ export function VoiceInputScreen() {
   }
 
   async function handleOrganize() {
-    if (!settings) {
-      return;
-    }
+    if (!settings) return;
+
     if (!text.trim()) {
       showNotification({
         title: '还没有可整理的内容',
@@ -99,12 +93,12 @@ export function VoiceInputScreen() {
 
     setLoading(true);
     try {
-      if (!demoMode && settings.organizerProvider === 'local') {
+      if (settings.organizerProvider === 'local') {
         const localStatus = await getLocalModelStatus();
         if (!localStatus.exists) {
           showNotification({
             title: '尚未下载本地模型',
-            message: '请先在“设置 → 本地模型管理”中下载 Qwen 模型。',
+            message: '请先在“设置 → 本地 Qwen → 本地模型管理”中下载模型。',
             kind: 'warning',
             icon: 'download-outline',
           });
@@ -122,16 +116,10 @@ export function VoiceInputScreen() {
         });
       }
 
-      const result = await organizeText({
-        text,
-        settings,
-        demoMode,
-      });
-      const organizerModelName = demoMode
-        ? 'demo'
-        : settings.organizerProvider === 'local'
-          ? settings.localModelName
-          : settings.modelName;
+      const result = await organizeText({ text, settings });
+      const organizerModelName =
+        settings.organizerProvider === 'local' ? settings.localModelName : settings.modelName;
+
       await saveOrganizedResult({
         rawText: text,
         source: inputSource,
@@ -140,7 +128,7 @@ export function VoiceInputScreen() {
       });
       showNotification({
         title: '语音笔记已保存',
-        message: `已通过${demoMode ? '演示规则' : settings.organizerProvider === 'local' ? '本地 Qwen' : '云端模型'}整理为 ${result.items.length} 个条目。`,
+        message: `已通过${settings.organizerProvider === 'local' ? '本地 Qwen' : '云端模型'}整理为 ${result.items.length} 个条目。`,
         kind: 'success',
         icon: 'check-circle-outline',
       });
@@ -198,31 +186,6 @@ export function VoiceInputScreen() {
           </Button>
         </View>
 
-        <MotionTouchable
-          onPress={() => setDemoMode(value => !value)}
-          borderRadius={18}
-          style={{ marginTop: 16 }}
-          contentStyle={{
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 12,
-            backgroundColor: theme.colors.surfaceVariant,
-          }}
-          accessibilityLabel={demoMode ? '关闭演示整理模式' : '开启演示整理模式'}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View pointerEvents="none">
-              <Switch value={demoMode} />
-            </View>
-            <View style={{ marginLeft: 10, flex: 1 }}>
-              <Text variant="titleSmall">演示整理模式</Text>
-              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                开启后不调用云端 API，也不加载本地 Qwen，仅验证记录流程。
-              </Text>
-            </View>
-          </View>
-        </MotionTouchable>
-
         <TextInput
           mode="outlined"
           label="识别文本或手动输入"
@@ -238,11 +201,9 @@ export function VoiceInputScreen() {
           placeholder="例如：这个周末整理 RoboMaster 弹道检测参数，并把 WebDAV 同步方案写进项目文档。"
         />
         <HelperText type="info">
-          {demoMode
-            ? '当前只使用演示规则。'
-            : settings?.organizerProvider === 'local'
-              ? '当前使用本地 Qwen；模型需要先在设置中下载。'
-              : '当前使用云端 API；请确保地址、密钥和模型名已经保存。'}
+          {settings?.organizerProvider === 'local'
+            ? '当前使用本地 Qwen；模型需要先在设置中下载。'
+            : '当前使用云端 API；请确保地址、密钥和模型名已经保存。'}
         </HelperText>
 
         <Button
