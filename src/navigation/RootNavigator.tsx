@@ -15,38 +15,45 @@ import { ProjectDetailScreen } from '../screens/ProjectDetailScreen';
 import { EntryDetailScreen } from '../screens/EntryDetailScreen';
 import { CategoryEntriesScreen } from '../screens/CategoryEntriesScreen';
 import { useAppTheme } from '../theme/AppThemeProvider';
+import { useVisualStyle } from '../theme/VisualStyleProvider';
+import { techTokens } from '../theme/tech/tokens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
   const { theme, isDark } = useAppTheme();
+  const { isTech } = useVisualStyle();
 
   const navigationTheme = useMemo<NavigationTheme>(
     () => ({
-      dark: isDark,
+      dark: isTech || isDark,
       colors: {
-        primary: theme.colors.primary,
-        background: theme.colors.background,
-        card: theme.colors.surface,
-        text: theme.colors.onSurface,
-        border: theme.colors.outlineVariant,
-        notification: theme.colors.error,
+        primary: isTech ? techTokens.colors.primary : theme.colors.primary,
+        background: isTech ? techTokens.colors.background : theme.colors.background,
+        card: isTech ? techTokens.colors.surface : theme.colors.surface,
+        text: isTech ? techTokens.colors.text : theme.colors.onSurface,
+        border: isTech ? techTokens.colors.line : theme.colors.outlineVariant,
+        notification: isTech ? techTokens.colors.error : theme.colors.error,
       },
     }),
-    [isDark, theme],
+    [isDark, isTech, theme],
   );
 
   return (
     <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator
         screenOptions={{
-          animation: 'simple_push',
-          animationDuration: 160,
+          animation: isTech ? 'fade_from_bottom' : 'simple_push',
+          animationDuration: isTech ? 260 : 160,
           freezeOnBlur: true,
           headerShadowVisible: false,
-          headerStyle: { backgroundColor: theme.colors.surface },
-          headerTintColor: theme.colors.onSurface,
-          contentStyle: { backgroundColor: theme.colors.background },
+          headerStyle: {
+            backgroundColor: isTech ? techTokens.colors.surface : theme.colors.surface,
+          },
+          headerTintColor: isTech ? techTokens.colors.text : theme.colors.onSurface,
+          contentStyle: {
+            backgroundColor: isTech ? techTokens.colors.background : theme.colors.background,
+          },
         }}
       >
         <Stack.Screen name="MainTabs" component={BottomTabs} options={{ headerShown: false }} />
@@ -55,7 +62,7 @@ export function RootNavigator() {
         <Stack.Screen name="LocalModelSettings" component={LocalModelSettingsScreen} options={{ title: '本地模型管理' }} />
         <Stack.Screen name="LocalModelChat" component={LocalModelChatScreen} options={{ title: '本地模型对话' }} />
         <Stack.Screen name="DeveloperOptions" component={DeveloperOptionsScreen} options={{ title: '开发者选项' }} />
-        <Stack.Screen name="About" component={AboutScreen} options={{ title: '关于 VoiceDairy' }} />
+        <Stack.Screen name="About" component={AboutScreen} options={{ title: '关于 VoiceDiary' }} />
         <Stack.Screen name="CategorySettings" component={CategorySettingsScreen} options={{ title: '分类设置' }} />
         <Stack.Screen name="ProjectSettings" component={ProjectSettingsScreen} options={{ title: '项目设置' }} />
         <Stack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: '项目详情' }} />
