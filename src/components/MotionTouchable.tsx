@@ -1,6 +1,8 @@
 import React, { useRef } from 'react';
-import { Animated, Pressable, StyleProp, ViewStyle } from 'react-native';
+import { Animated, Pressable, type StyleProp, type ViewStyle } from 'react-native';
 import { useTheme } from 'react-native-paper';
+import { useVisualStyle } from '../theme/VisualStyleProvider';
+import { techTokens } from '../theme/tech/tokens';
 
 function withAlpha(color: string, alpha: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(color) ? `${color}${alpha}` : color;
@@ -32,20 +34,33 @@ export function MotionTouchable({
   rippleColor,
 }: MotionTouchableProps) {
   const theme = useTheme();
+  const { isTech, motion } = useVisualStyle();
   const scale = useRef(new Animated.Value(1)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
   const longPressed = useRef(false);
 
-  function animate(toValue: number, duration: number) {
+  function animate(pressed: boolean) {
+    if (!motion.pressFeedback) return;
     scale.stopAnimation();
-    Animated.timing(scale, {
-      toValue,
-      duration,
-      useNativeDriver: true,
-    }).start();
+    translateY.stopAnimation();
+    Animated.parallel([
+      Animated.spring(scale, {
+        toValue: pressed ? (isTech ? 0.973 : 0.992) : 1,
+        speed: 38,
+        bounciness: pressed ? 0 : isTech ? 5 : 2,
+        useNativeDriver: true,
+      }),
+      Animated.spring(translateY, {
+        toValue: pressed && isTech ? 2 : 0,
+        speed: 38,
+        bounciness: 2,
+        useNativeDriver: true,
+      }),
+    ]).start();
   }
 
   return (
-    <Animated.View style={[style, { transform: [{ scale }] }]}>
+    <Animated.View style={[style, { transform: [{ scale }, { translateY }] }]}>
       <Pressable
         onPress={() => {
           if (!longPressed.current) onPress?.();
@@ -58,14 +73,16 @@ export function MotionTouchable({
         delayLongPress={delayLongPress}
         onPressIn={() => {
           longPressed.current = false;
-          animate(0.992, 55);
+          animate(true);
         }}
-        onPressOut={() => animate(1, 95)}
+        onPressOut={() => animate(false)}
         disabled={disabled || (!onPress && !onLongPress)}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         android_ripple={{
-          color: rippleColor ?? withAlpha(theme.colors.primary, '2E'),
+          color:
+            rippleColor ??
+            (isTech ? 'rgba(85, 217, 255, 0.17)' : withAlpha(theme.colors.primary, '2E')),
           borderless: false,
           foreground: true,
         }}
@@ -73,6 +90,9 @@ export function MotionTouchable({
           {
             borderRadius,
             overflow: 'hidden',
+            shadowColor: isTech ? techTokens.colors.primary : undefined,
+            shadowOpacity: isTech && motion.decorative ? 0.08 : 0,
+            shadowRadius: isTech ? 8 : 0,
           },
           contentStyle,
         ]}
