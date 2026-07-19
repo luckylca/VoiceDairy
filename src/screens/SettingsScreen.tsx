@@ -290,10 +290,9 @@ export function SettingsScreen() {
           <SegmentedButtons
             value={settings.organizerProvider}
             onValueChange={handleOrganizerProviderChange}
-            disabled={!settingsReady}
             buttons={[
-              { value: 'cloud', label: '云端 API', icon: 'cloud-outline' },
-              { value: 'local', label: '本地 Qwen', icon: 'cellphone' },
+              { value: 'cloud', label: '云端 API', icon: 'cloud-outline', disabled: !settingsReady },
+              { value: 'local', label: '本地 Qwen', icon: 'cellphone', disabled: !settingsReady },
             ]}
             style={{ marginTop: 14 }}
           />
