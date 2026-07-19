@@ -3,6 +3,8 @@ import { useColorScheme } from 'react-native';
 import { MD3DarkTheme, MD3LightTheme, PaperProvider, type MD3Theme } from 'react-native-paper';
 import type { ThemeMode } from '../types/settings';
 import { defaultSettings, loadSettings, saveSettings, subscribeSettings } from '../services/settings/SettingsService';
+import { useVisualStyle } from './VisualStyleProvider';
+import { techTokens } from './tech/tokens';
 
 type ThemeColors = {
   primary: string;
@@ -149,8 +151,59 @@ function findPreset(seed: string): ThemePreset {
   return THEME_PRESETS.find(item => item.seed.toLowerCase() === seed.toLowerCase()) ?? THEME_PRESETS[0];
 }
 
+function buildTechPaperTheme(): MD3Theme {
+  return {
+    ...MD3DarkTheme,
+    roundness: 2,
+    colors: {
+      ...MD3DarkTheme.colors,
+      primary: techTokens.colors.primary,
+      onPrimary: techTokens.colors.backgroundDeep,
+      primaryContainer: '#103746',
+      onPrimaryContainer: '#C9F4FF',
+      secondary: techTokens.colors.secondary,
+      onSecondary: '#09051D',
+      secondaryContainer: '#27214B',
+      onSecondaryContainer: '#E6E0FF',
+      tertiary: techTokens.colors.success,
+      onTertiary: '#00261B',
+      tertiaryContainer: '#0C4032',
+      onTertiaryContainer: '#B8FFE7',
+      background: techTokens.colors.background,
+      onBackground: techTokens.colors.text,
+      surface: techTokens.colors.surface,
+      onSurface: techTokens.colors.text,
+      surfaceVariant: techTokens.colors.surfaceRaised,
+      onSurfaceVariant: techTokens.colors.textMuted,
+      surfaceDisabled: 'rgba(143, 168, 181, 0.12)',
+      onSurfaceDisabled: 'rgba(143, 168, 181, 0.38)',
+      outline: 'rgba(119, 193, 221, 0.42)',
+      outlineVariant: techTokens.colors.line,
+      error: techTokens.colors.error,
+      onError: '#330007',
+      errorContainer: '#55131C',
+      onErrorContainer: '#FFD9DC',
+      inverseSurface: techTokens.colors.text,
+      inverseOnSurface: techTokens.colors.backgroundDeep,
+      inversePrimary: techTokens.colors.primaryStrong,
+      shadow: '#000000',
+      scrim: '#000000',
+      backdrop: 'rgba(0, 4, 8, 0.76)',
+      elevation: {
+        level0: 'transparent',
+        level1: '#0B1923',
+        level2: '#0E202C',
+        level3: '#112733',
+        level4: '#132C3A',
+        level5: '#153241',
+      },
+    },
+  };
+}
+
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
+  const { isTech } = useVisualStyle();
   const [themeMode, setThemeModeState] = useState<ThemeMode>(defaultSettings.themeMode);
   const [colorSeed, setColorSeedState] = useState(defaultSettings.colorSeed);
 
@@ -166,13 +219,15 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const isDark = themeMode === 'dark' || (themeMode === 'system' && systemScheme === 'dark');
+  const classicIsDark = themeMode === 'dark' || (themeMode === 'system' && systemScheme === 'dark');
+  const isDark = isTech || classicIsDark;
   const preset = useMemo(() => findPreset(colorSeed), [colorSeed]);
 
   const theme = useMemo<MD3Theme>(() => {
-    const base = isDark ? MD3DarkTheme : MD3LightTheme;
-    const selectedColors = isDark ? preset.dark : preset.light;
+    if (isTech) return buildTechPaperTheme();
 
+    const base = classicIsDark ? MD3DarkTheme : MD3LightTheme;
+    const selectedColors = classicIsDark ? preset.dark : preset.light;
     return {
       ...base,
       roundness: 4,
@@ -181,7 +236,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
         ...selectedColors,
       },
     };
-  }, [isDark, preset]);
+  }, [classicIsDark, isTech, preset]);
 
   const persistTheme = useCallback(async (patch: { themeMode?: ThemeMode; colorSeed?: string }) => {
     const current = await loadSettings();
