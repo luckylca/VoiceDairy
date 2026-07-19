@@ -14,10 +14,6 @@ import { techTokens } from '../theme/tech/tokens';
 
 const LAST_MAIN_TAB_KEY = 'voicediary.navigation.last-main-tab.v1';
 
-function withAlpha(color: string, alpha: string): string {
-  return /^#[0-9a-fA-F]{6}$/.test(color) ? `${color}${alpha}` : color;
-}
-
 type TabDefinition = {
   name: MainTabName;
   label: string;
@@ -28,11 +24,16 @@ type TabDefinition = {
 const tabs: TabDefinition[] = [
   { name: 'record', label: '记录', activeIcon: 'microphone', inactiveIcon: 'microphone-outline' },
   { name: 'timeline', label: '时间线', activeIcon: 'clock', inactiveIcon: 'clock-outline' },
-  { name: 'agent', label: 'Agent', activeIcon: 'message-processing', inactiveIcon: 'message-processing-outline' },
+  {
+    name: 'agent',
+    label: 'Agent',
+    activeIcon: 'message-processing',
+    inactiveIcon: 'message-processing-outline',
+  },
   { name: 'settings', label: '设置', activeIcon: 'cog', inactiveIcon: 'cog-outline' },
 ];
 
-function ClassicBottomNavItem({
+function ClassicTab({
   tab,
   focused,
   onPress,
@@ -53,26 +54,22 @@ function ClassicBottomNavItem({
   }, [focused, progress]);
 
   return (
-    <View style={styles.tabItemSlot}>
+    <View style={styles.tabSlot}>
       <TouchableRipple
         onPress={onPress}
-        borderless={false}
-        rippleColor={withAlpha(theme.colors.primary, '2E')}
         accessibilityRole="tab"
         accessibilityState={{ selected: focused }}
         accessibilityLabel={tab.label}
         style={[
-          styles.classicTabItem,
+          styles.classicTab,
           { backgroundColor: focused ? theme.colors.secondaryContainer : 'transparent' },
         ]}
       >
-        <View style={styles.tabItemContent}>
+        <View style={styles.tabContent}>
           <Animated.View
             style={{
               transform: [
-                {
-                  scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }),
-                },
+                { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) },
               ],
             }}
           >
@@ -112,7 +109,7 @@ function ClassicBottomNavItem({
   );
 }
 
-function TechBottomNavItem({
+function TechTab({
   tab,
   focused,
   onPress,
@@ -138,9 +135,9 @@ function TechBottomNavItem({
       accessibilityState={{ selected: focused }}
       accessibilityLabel={tab.label}
       onPress={onPress}
-      style={styles.techTabItem}
+      style={styles.techTab}
     >
-      <Animated.View style={[styles.techTabContent, { transform: [{ scale }] }]}>
+      <Animated.View style={[styles.tabContent, { transform: [{ scale }] }]}>
         <View style={[styles.techIconShell, focused && styles.techIconShellFocused]}>
           <Icon
             source={focused ? tab.activeIcon : tab.inactiveIcon}
@@ -168,6 +165,7 @@ export function BottomTabs() {
   const theme = useTheme();
   const { isTech } = useVisualStyle();
   const pagerRef = useRef<PagerView>(null);
+  const activeIndexRef = useRef(0);
   const [activeIndex, setActiveIndex] = useState(0);
 
   const pages = useMemo(
@@ -189,8 +187,7 @@ export function BottomTabs() {
   );
 
   function openPage(index: number, animated = true) {
-    if (index < 0 || index >= tabs.length) return;
-    if (index === activeIndex) return;
+    if (index < 0 || index >= tabs.length || index === activeIndexRef.current) return;
     if (animated) pagerRef.current?.setPage(index);
     else pagerRef.current?.setPageWithoutAnimation(index);
   }
@@ -233,10 +230,10 @@ export function BottomTabs() {
         orientation="horizontal"
         scrollEnabled
         overScrollMode="never"
-        pageMargin={0}
         offscreenPageLimit={1}
         onPageSelected={event => {
           const index = event.nativeEvent.position;
+          activeIndexRef.current = index;
           setActiveIndex(index);
           void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[index]?.name ?? 'record');
         }}
@@ -257,14 +254,14 @@ export function BottomTabs() {
       >
         {tabs.map((tab, index) =>
           isTech ? (
-            <TechBottomNavItem
+            <TechTab
               key={tab.name}
               tab={tab}
               focused={activeIndex === index}
               onPress={() => openPage(index)}
             />
           ) : (
-            <ClassicBottomNavItem
+            <ClassicTab
               key={tab.name}
               tab={tab}
               focused={activeIndex === index}
@@ -278,15 +275,9 @@ export function BottomTabs() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  pager: {
-    flex: 1,
-  },
-  page: {
-    flex: 1,
-  },
+  root: { flex: 1 },
+  pager: { flex: 1 },
+  page: { flex: 1 },
   tabBar: {
     height: 72,
     flexDirection: 'row',
@@ -303,17 +294,17 @@ const styles = StyleSheet.create({
     borderTopColor: techTokens.colors.line,
     backgroundColor: 'rgba(3, 10, 16, 0.98)',
   },
-  tabItemSlot: {
+  tabSlot: {
     flex: 1,
     height: '100%',
     paddingHorizontal: 2,
   },
-  classicTabItem: {
+  classicTab: {
     flex: 1,
     borderRadius: 18,
     overflow: 'hidden',
   },
-  tabItemContent: {
+  tabContent: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -324,14 +315,9 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     marginTop: 3,
   },
-  techTabItem: {
+  techTab: {
     flex: 1,
     height: '100%',
-  },
-  techTabContent: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   techIconShell: {
     width: 35,
