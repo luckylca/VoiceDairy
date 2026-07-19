@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   Button,
@@ -9,17 +9,30 @@ import {
   RadioButton,
   Searchbar,
   SegmentedButtons,
+  Switch,
   Text,
   TextInput,
   useTheme,
 } from 'react-native-paper';
-import type { AppSettings, OrganizerProvider, ThemeMode } from '../types/settings';
+import type {
+  AppSettings,
+  MotionLevel,
+  OrganizerProvider,
+  StartupPage,
+  ThemeMode,
+  VisualStyle,
+} from '../types/settings';
 import { defaultSettings, loadSettings, saveSettings } from '../services/settings/SettingsService';
 import { fetchAvailableModels } from '../services/llm/LlmService';
 import { getLocalModelStatus, type LocalModelStatus } from '../services/llm/LocalModelService';
 import { THEME_PRESETS, useAppTheme } from '../theme/AppThemeProvider';
+import { useVisualStyle } from '../theme/VisualStyleProvider';
 import { MotionTouchable } from '../components/MotionTouchable';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
+import { TechScreen } from '../components/tech/TechScreen';
+import { TechPanel } from '../components/tech/TechPanel';
+import { TechButton } from '../components/tech/TechButton';
+import { techTokens } from '../theme/tech/tokens';
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return '0 MB';
@@ -33,6 +46,7 @@ export function SettingsScreen() {
   const navigation = useNavigation<any>();
   const theme = useTheme();
   const { setThemeMode, setColorSeed } = useAppTheme();
+  const { isTech, setVisualStyle, setMotionLevel } = useVisualStyle();
   const { showNotification } = useFluidNotification();
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [settingsReady, setSettingsReady] = useState(false);
@@ -52,13 +66,11 @@ export function SettingsScreen() {
         try {
           const current = await loadSettings();
           if (!active) return;
-
           setSettings(current);
           setSettingsReady(true);
-
           if (current.organizerProvider === 'local') {
-            const modelStatus = await getLocalModelStatus();
-            if (active) setLocalModelStatus(modelStatus);
+            const status = await getLocalModelStatus();
+            if (active) setLocalModelStatus(status);
           } else {
             setLocalModelStatus(null);
           }
@@ -85,45 +97,44 @@ export function SettingsScreen() {
     setSettings(previous => ({ ...previous, ...patch }));
   }
 
+  async function persistPatch(patch: Partial<AppSettings>) {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    await saveSettings(next);
+  }
+
+  async function handleVisualStyleChange(value: VisualStyle) {
+    patchSettings({ visualStyle: value });
+    await setVisualStyle(value);
+    showNotification({
+      title: value === 'tech' ? '已切换为科技界面' : '已切换为经典界面',
+      message: '界面已立即更新，记录、对话和设置保持不变。',
+      kind: 'success',
+      icon: value === 'tech' ? 'vector-polyline' : 'view-dashboard-outline',
+    });
+  }
+
+  async function handleMotionLevelChange(value: MotionLevel) {
+    patchSettings({ motionLevel: value });
+    await setMotionLevel(value);
+  }
+
   async function handleThemeModeChange(value: string) {
     const themeMode = value as ThemeMode;
     patchSettings({ themeMode });
     await setThemeMode(themeMode);
-    const labels: Record<ThemeMode, string> = {
-      system: '跟随系统',
-      light: '浅色模式',
-      dark: '深色模式',
-    };
-    showNotification({
-      title: `已切换为${labels[themeMode]}`,
-      message: '界面颜色已经立即更新。',
-      kind: 'success',
-      icon: themeMode === 'dark' ? 'weather-night' : themeMode === 'light' ? 'white-balance-sunny' : 'theme-light-dark',
-    });
   }
 
   async function handleColorChange(colorSeed: string) {
     patchSettings({ colorSeed });
     await setColorSeed(colorSeed);
-    const preset = THEME_PRESETS.find(item => item.seed.toLowerCase() === colorSeed.toLowerCase());
-    showNotification({
-      title: `已应用${preset?.label ?? '新'}主题`,
-      message: '主题色已保存。',
-      kind: 'success',
-      icon: 'palette-outline',
-    });
   }
 
   async function handleOrganizerProviderChange(value: string) {
     const organizerProvider = value as OrganizerProvider;
     const next = { ...settings, organizerProvider };
-
     setSettings(next);
     setModelDialogVisible(false);
-    if (organizerProvider === 'cloud') {
-      setLocalModelStatus(null);
-    }
-
     await saveSettings(next);
 
     if (organizerProvider === 'local') {
@@ -132,17 +143,9 @@ export function SettingsScreen() {
       } catch {
         setLocalModelStatus(null);
       }
+    } else {
+      setLocalModelStatus(null);
     }
-
-    showNotification({
-      title: organizerProvider === 'local' ? '已启用本地 Qwen 整理' : '已切换到云端 API',
-      message:
-        organizerProvider === 'local'
-          ? '识别后的文本会在手机上整理；本地模型管理入口已显示。'
-          : '识别后的文本会发送到配置的兼容 API；本地模型入口已隐藏。',
-      kind: organizerProvider === 'local' && !localModelStatus?.exists ? 'warning' : 'success',
-      icon: organizerProvider === 'local' ? 'cellphone' : 'cloud-outline',
-    });
   }
 
   async function handleSaveCloud() {
@@ -167,12 +170,6 @@ export function SettingsScreen() {
       setAvailableModels(models);
       setModelQuery('');
       setModelDialogVisible(true);
-      showNotification({
-        title: '模型列表获取成功',
-        message: `接口返回了 ${models.length} 个模型。`,
-        kind: 'success',
-        icon: 'database-check-outline',
-      });
     } catch (error) {
       showNotification({
         title: '获取模型列表失败',
@@ -184,30 +181,99 @@ export function SettingsScreen() {
     }
   }
 
-  const cardStyle = [
-    styles.card,
-    { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant },
-  ];
-
-  return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingTop: 20, paddingBottom: 48 }}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        showsVerticalScrollIndicator={false}
+  const content = (
+    <ScrollView
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      showsVerticalScrollIndicator={false}
+    >
+      <Text
+        variant="headlineMedium"
+        style={{ fontWeight: '900', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}
       >
-        <Text variant="headlineMedium" style={{ fontWeight: '900' }}>
-          设置
-        </Text>
-        <Text variant="bodyMedium" style={{ marginTop: 4, color: theme.colors.onSurfaceVariant }}>
-          管理外观、项目、智能整理与应用信息。
-        </Text>
+        设置
+      </Text>
+      <Text
+        variant="bodyMedium"
+        style={{ marginTop: 4, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}
+      >
+        管理界面、动态效果、启动方式、模型和内容。
+      </Text>
 
-        <View style={cardStyle}>
-          <Text variant="titleMedium" style={styles.sectionTitle}>
-            外观主题
-          </Text>
+      <SettingsSection title="界面风格" isTech={isTech}>
+        <View style={styles.choiceRow}>
+          <ChoiceTile
+            label="经典界面"
+            description="保留 Material Design 3"
+            icon="view-dashboard-outline"
+            selected={settings.visualStyle === 'classic'}
+            isTech={isTech}
+            onPress={() => void handleVisualStyleChange('classic')}
+          />
+          <ChoiceTile
+            label="科技界面"
+            description="深色沉浸式数据流视觉"
+            icon="vector-polyline"
+            selected={settings.visualStyle === 'tech'}
+            isTech={isTech}
+            onPress={() => void handleVisualStyleChange('tech')}
+          />
+        </View>
+
+        <Text variant="labelLarge" style={[styles.subheading, { color: isTech ? techTokens.colors.text : theme.colors.onSurface }]}>动态效果</Text>
+        <View style={styles.compactChoices}>
+          {([
+            ['full', '完整'],
+            ['standard', '标准'],
+            ['reduced', '减少'],
+            ['off', '关闭'],
+          ] as [MotionLevel, string][]).map(([value, label]) => (
+            <CompactChoice
+              key={value}
+              label={label}
+              selected={settings.motionLevel === value}
+              isTech={isTech}
+              onPress={() => void handleMotionLevelChange(value)}
+            />
+          ))}
+        </View>
+
+        <Text variant="labelLarge" style={[styles.subheading, { color: isTech ? techTokens.colors.text : theme.colors.onSurface }]}>启动时打开</Text>
+        <View style={styles.compactChoices}>
+          {([
+            ['quick_record', '快速记录'],
+            ['last_page', '上次页面'],
+            ['agent', 'Agent'],
+          ] as [StartupPage, string][]).map(([value, label]) => (
+            <CompactChoice
+              key={value}
+              label={label}
+              selected={settings.startupPage === value}
+              isTech={isTech}
+              onPress={() => void persistPatch({ startupPage: value })}
+            />
+          ))}
+        </View>
+
+        <SettingSwitchRow
+          title="识别完成后自动整理"
+          description="自动生成预览，但仍需确认后保存"
+          value={settings.autoOrganizeAfterRecognition}
+          isTech={isTech}
+          onValueChange={value => void persistPatch({ autoOrganizeAfterRecognition: value })}
+        />
+        <SettingSwitchRow
+          title="Agent 语音识别后自动发送"
+          description="默认关闭，便于发送前检查文字"
+          value={settings.agentAutoSendVoice}
+          isTech={isTech}
+          onValueChange={value => void persistPatch({ agentAutoSendVoice: value })}
+        />
+      </SettingsSection>
+
+      {!isTech ? (
+        <SettingsSection title="经典主题" isTech={false}>
           <SegmentedButtons
             value={settings.themeMode}
             onValueChange={handleThemeModeChange}
@@ -216,215 +282,175 @@ export function SettingsScreen() {
               { value: 'light', label: '浅色', icon: 'white-balance-sunny' },
               { value: 'dark', label: '深色', icon: 'weather-night' },
             ]}
-            style={{ marginTop: 14 }}
+            style={{ marginTop: 12 }}
           />
-          <Text variant="labelLarge" style={{ marginTop: 20, marginBottom: 10 }}>
-            主题颜色
-          </Text>
+          <Text variant="labelLarge" style={styles.subheading}>主题颜色</Text>
           <View style={styles.paletteRow}>
             {THEME_PRESETS.map(preset => {
               const selected = settings.colorSeed.toLowerCase() === preset.seed.toLowerCase();
               return (
-                <MotionTouchable
+                <Pressable
                   key={preset.seed}
-                  onPress={() => handleColorChange(preset.seed)}
-                  borderRadius={16}
-                  style={styles.paletteItem}
-                  contentStyle={{
-                    borderRadius: 16,
-                    paddingVertical: 8,
-                    backgroundColor: selected ? theme.colors.secondaryContainer : theme.colors.surfaceVariant,
-                    borderWidth: 1,
-                    borderColor: selected ? theme.colors.primary : theme.colors.outlineVariant,
-                  }}
-                  accessibilityLabel={`切换到${preset.label}主题`}
+                  onPress={() => void handleColorChange(preset.seed)}
+                  style={[
+                    styles.paletteItem,
+                    {
+                      borderColor: selected ? theme.colors.primary : theme.colors.outlineVariant,
+                      backgroundColor: selected ? theme.colors.secondaryContainer : theme.colors.surfaceVariant,
+                    },
+                  ]}
                 >
-                  <View style={{ alignItems: 'center' }}>
-                    <View
-                      style={[
-                        styles.colorSwatch,
-                        { backgroundColor: preset.seed },
-                        selected && { borderColor: theme.colors.onSurface, borderWidth: 3 },
-                      ]}
-                    >
-                      {selected ? <Icon source="check" size={18} color="#FFFFFF" /> : null}
-                    </View>
-                    <Text variant="labelSmall" style={{ marginTop: 6 }}>
-                      {preset.label}
-                    </Text>
+                  <View style={[styles.colorSwatch, { backgroundColor: preset.seed }]}>
+                    {selected ? <Icon source="check" size={17} color="#FFFFFF" /> : null}
                   </View>
-                </MotionTouchable>
+                  <Text variant="labelSmall" style={{ marginTop: 5 }}>{preset.label}</Text>
+                </Pressable>
               );
             })}
           </View>
-        </View>
+        </SettingsSection>
+      ) : null}
 
-        <View style={cardStyle}>
-          <Text variant="titleMedium" style={styles.sectionTitle}>
-            内容管理
+      <SettingsSection title="内容管理" isTech={isTech}>
+        <SettingsLink
+          icon="shape-outline"
+          title="分类设置"
+          description="修改想法、待办、项目进展和提醒的名称"
+          isTech={isTech}
+          onPress={() => navigation.navigate('CategorySettings')}
+        />
+        <SettingsLink
+          icon="folder-outline"
+          title="项目设置"
+          description="创建项目，维护需求清单和完成状态"
+          isTech={isTech}
+          onPress={() => navigation.navigate('ProjectSettings')}
+        />
+      </SettingsSection>
+
+      <SettingsSection title="智能整理" isTech={isTech}>
+        <Text variant="bodySmall" style={{ color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
+          SenseVoice 始终在本地转写；这里只决定后续使用云端 API 还是本地 Qwen。
+        </Text>
+        <SegmentedButtons
+          value={settings.organizerProvider}
+          onValueChange={handleOrganizerProviderChange}
+          buttons={[
+            { value: 'cloud', label: '云端 API', icon: 'cloud-outline', disabled: !settingsReady },
+            { value: 'local', label: '本地 Qwen', icon: 'cellphone', disabled: !settingsReady },
+          ]}
+          style={{ marginTop: 14 }}
+        />
+
+        {!settingsReady ? (
+          <Text variant="bodySmall" style={{ marginTop: 14, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
+            正在读取整理后端设置…
           </Text>
-          <Text variant="bodySmall" style={{ marginTop: 5, color: theme.colors.onSurfaceVariant }}>
-            管理分类、项目和项目需求。
-          </Text>
+        ) : isLocalOrganizer ? (
           <SettingsLink
-            icon="shape-outline"
-            title="分类设置"
-            description="修改想法、待办、项目进度和提醒的名称与说明"
-            onPress={() => navigation.navigate('CategorySettings')}
+            icon="brain"
+            title="本地模型管理"
+            description={localModelStatus?.exists
+              ? `${localModelStatus.loaded ? '已加载' : '已下载'} · ${formatBytes(localModelStatus.bytes)}`
+              : 'Qwen3.5-0.8B Q4_0 · 尚未下载'}
+            isTech={isTech}
+            onPress={() => navigation.navigate('LocalModelSettings')}
           />
-          <SettingsLink
-            icon="folder-outline"
-            title="项目设置"
-            description="创建项目，维护需求清单和完成状态"
-            onPress={() => navigation.navigate('ProjectSettings')}
-          />
-        </View>
-
-        <View style={cardStyle}>
-          <Text variant="titleMedium" style={styles.sectionTitle}>
-            智能整理
-          </Text>
-          <Text variant="bodySmall" style={{ marginTop: 5, color: theme.colors.onSurfaceVariant }}>
-            SenseVoice 始终在本地转写；这里只决定后续使用云端 API 还是本地 Qwen。
-          </Text>
-          <SegmentedButtons
-            value={settings.organizerProvider}
-            onValueChange={handleOrganizerProviderChange}
-            buttons={[
-              { value: 'cloud', label: '云端 API', icon: 'cloud-outline', disabled: !settingsReady },
-              { value: 'local', label: '本地 Qwen', icon: 'cellphone', disabled: !settingsReady },
-            ]}
-            style={{ marginTop: 14 }}
-          />
-
-          {!settingsReady ? (
-            <Text variant="bodySmall" style={{ marginTop: 14, color: theme.colors.onSurfaceVariant }}>
-              正在读取整理后端设置…
-            </Text>
-          ) : isLocalOrganizer ? (
-            <View key="local-organizer" style={{ marginTop: 14 }}>
-              <MotionTouchable
-                onPress={() => navigation.navigate('LocalModelSettings')}
-                borderRadius={18}
-                contentStyle={[
-                  styles.localModelCard,
-                  {
-                    backgroundColor: theme.colors.primaryContainer,
-                    borderColor: theme.colors.primary,
-                  },
-                ]}
-              >
-                <View style={styles.settingRow}>
-                  <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}> 
-                    <Icon source="brain" size={24} color={theme.colors.onTertiaryContainer} />
-                  </View>
-                  <View style={styles.rowText}>
-                    <Text variant="titleMedium" style={{ fontWeight: '900' }}>
-                      本地模型管理
-                    </Text>
-                    <Text variant="bodySmall" style={{ marginTop: 3, color: theme.colors.onSurfaceVariant }}>
-                      {localModelStatus?.exists
-                        ? `${localModelStatus.loaded ? '已加载' : '已下载'} · ${formatBytes(localModelStatus.bytes)}`
-                        : 'Qwen3.5-0.8B Q4_0 · 约563MB · 尚未下载'}
-                    </Text>
-                    <Text variant="labelSmall" style={{ marginTop: 4, color: theme.colors.primary }}>
-                      下载、加载、运行设置与本地对话
-                    </Text>
-                  </View>
-                  <Icon source="chevron-right" size={23} color={theme.colors.onSurfaceVariant} />
-                </View>
-              </MotionTouchable>
-            </View>
-          ) : (
-            <View key="cloud-organizer" style={{ marginTop: 4 }}>
-              <TextInput
-                mode="outlined"
-                label="API Base URL"
-                value={settings.apiBaseUrl}
-                onChangeText={apiBaseUrl => patchSettings({ apiBaseUrl })}
-                autoCapitalize="none"
-                style={{ marginTop: 12 }}
-              />
-              <TextInput
-                mode="outlined"
-                label="API Key"
-                value={settings.apiKey}
-                onChangeText={apiKey => patchSettings({ apiKey })}
-                secureTextEntry
-                autoCapitalize="none"
-                style={{ marginTop: 12 }}
-              />
-              <TextInput
-                mode="outlined"
-                label="模型名"
-                value={settings.modelName}
-                onChangeText={modelName => patchSettings({ modelName })}
-                autoCapitalize="none"
-                style={{ marginTop: 12 }}
-              />
+        ) : (
+          <View style={{ marginTop: 4 }}>
+            <TextInput
+              mode="outlined"
+              label="API Base URL"
+              value={settings.apiBaseUrl}
+              onChangeText={apiBaseUrl => patchSettings({ apiBaseUrl })}
+              autoCapitalize="none"
+              style={{ marginTop: 12 }}
+            />
+            <TextInput
+              mode="outlined"
+              label="API Key"
+              value={settings.apiKey}
+              onChangeText={apiKey => patchSettings({ apiKey })}
+              secureTextEntry
+              autoCapitalize="none"
+              style={{ marginTop: 12 }}
+            />
+            <TextInput
+              mode="outlined"
+              label="模型名"
+              value={settings.modelName}
+              onChangeText={modelName => patchSettings({ modelName })}
+              autoCapitalize="none"
+              style={{ marginTop: 12 }}
+            />
+            {isTech ? (
               <View style={styles.inlineButtons}>
-                <Button
-                  mode="outlined"
+                <TechButton
+                  label="获取模型"
+                  variant="ghost"
                   icon="database-search-outline"
-                  loading={loadingModels}
                   disabled={loadingModels || !settings.apiBaseUrl.trim()}
-                  onPress={handleFetchModels}
-                  style={styles.inlineButton}
-                  contentStyle={styles.actionButtonContent}
-                >
-                  获取模型
-                </Button>
-                <Button
-                  mode="contained"
+                  onPress={() => void handleFetchModels()}
+                  style={{ flex: 1 }}
+                />
+                <TechButton
+                  label="保存配置"
                   icon="content-save-outline"
-                  loading={savingCloud}
-                  onPress={handleSaveCloud}
-                  style={styles.inlineButton}
-                  contentStyle={styles.actionButtonContent}
-                >
-                  保存配置
-                </Button>
+                  disabled={savingCloud}
+                  onPress={() => void handleSaveCloud()}
+                  style={{ flex: 1 }}
+                />
               </View>
-            </View>
-          )}
+            ) : (
+              <View style={styles.inlineButtons}>
+                <Button mode="outlined" icon="database-search-outline" loading={loadingModels} onPress={handleFetchModels} style={{ flex: 1 }}>获取模型</Button>
+                <Button mode="contained" icon="content-save-outline" loading={savingCloud} onPress={handleSaveCloud} style={{ flex: 1 }}>保存配置</Button>
+              </View>
+            )}
+          </View>
+        )}
 
-          <SettingsLink
-            icon="application-edit-outline"
-            title="整理提示词"
-            description="云端和本地整理共用规则"
-            onPress={() => navigation.navigate('PromptSettings')}
-          />
-        </View>
+        <SettingsLink
+          icon="application-edit-outline"
+          title="整理提示词"
+          description="云端和本地整理共用规则"
+          isTech={isTech}
+          onPress={() => navigation.navigate('PromptSettings')}
+        />
+      </SettingsSection>
 
-        <View style={cardStyle}>
-          <Text variant="titleMedium" style={styles.sectionTitle}>
-            系统
-          </Text>
-          <SettingsLink
-            icon="tools"
-            title="开发者选项"
-            description="显示刷新率、WebDAV、JSON 快照和数据清理"
-            onPress={() => navigation.navigate('DeveloperOptions')}
-          />
-          <SettingsLink
-            icon="information-outline"
-            title="关于 VoiceDairy"
-            description="版本、隐私说明、技术栈和当前开发状态"
-            onPress={() => navigation.navigate('About')}
-          />
-        </View>
-      </ScrollView>
+      <SettingsSection title="系统" isTech={isTech}>
+        <SettingsLink
+          icon="tools"
+          title="开发者选项"
+          description="刷新率、WebDAV、数据快照和清理"
+          isTech={isTech}
+          onPress={() => navigation.navigate('DeveloperOptions')}
+        />
+        <SettingsLink
+          icon="information-outline"
+          title="关于 VoiceDiary"
+          description="版本、隐私、技术栈和当前开发状态"
+          isTech={isTech}
+          onPress={() => navigation.navigate('About')}
+        />
+      </SettingsSection>
+    </ScrollView>
+  );
+
+  return (
+    <>
+      {isTech ? (
+        <TechScreen>{content}</TechScreen>
+      ) : (
+        <View style={{ flex: 1, backgroundColor: theme.colors.background }}>{content}</View>
+      )}
 
       <Portal>
         <Dialog visible={modelDialogVisible} onDismiss={() => setModelDialogVisible(false)}>
           <Dialog.Title>选择模型</Dialog.Title>
           <Dialog.Content>
-            <Searchbar
-              placeholder="搜索模型名"
-              value={modelQuery}
-              onChangeText={setModelQuery}
-              elevation={0}
-            />
+            <Searchbar placeholder="搜索模型名" value={modelQuery} onChangeText={setModelQuery} elevation={0} />
           </Dialog.Content>
           <Dialog.ScrollArea style={{ maxHeight: 390 }}>
             <ScrollView keyboardShouldPersistTaps="handled">
@@ -453,80 +479,250 @@ export function SettingsScreen() {
           </Dialog.Actions>
         </Dialog>
       </Portal>
+    </>
+  );
+}
+
+type SettingsSectionProps = {
+  title: string;
+  isTech: boolean;
+  children: React.ReactNode;
+};
+
+function SettingsSection({ title, isTech, children }: SettingsSectionProps) {
+  const theme = useTheme();
+  if (isTech) {
+    return (
+      <TechPanel accent style={{ marginTop: 14 }}>
+        <Text style={styles.techSectionTitle}>{title}</Text>
+        <View style={{ marginTop: 12 }}>{children}</View>
+      </TechPanel>
+    );
+  }
+
+  return (
+    <View style={[styles.classicCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}>
+      <Text variant="titleMedium" style={{ fontWeight: '900' }}>{title}</Text>
+      <View style={{ marginTop: 8 }}>{children}</View>
     </View>
   );
 }
 
-type SettingsLinkProps = {
-  icon: string;
-  title: string;
+type ChoiceTileProps = {
+  label: string;
   description: string;
+  icon: string;
+  selected: boolean;
+  isTech: boolean;
   onPress: () => void;
 };
 
-function SettingsLink({ icon, title, description, onPress }: SettingsLinkProps) {
+function ChoiceTile({ label, description, icon, selected, isTech, onPress }: ChoiceTileProps) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.choiceTile,
+        {
+          borderColor: selected
+            ? isTech
+              ? techTokens.colors.primary
+              : theme.colors.primary
+            : isTech
+              ? techTokens.colors.line
+              : theme.colors.outlineVariant,
+          backgroundColor: selected
+            ? isTech
+              ? 'rgba(85, 217, 255, 0.10)'
+              : theme.colors.secondaryContainer
+            : isTech
+              ? 'rgba(255,255,255,0.02)'
+              : theme.colors.surfaceVariant,
+        },
+      ]}
+    >
+      <Icon source={icon} size={25} color={selected ? (isTech ? techTokens.colors.primary : theme.colors.primary) : (isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant)} />
+      <Text variant="titleSmall" style={{ marginTop: 8, fontWeight: '900', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>{label}</Text>
+      <Text variant="bodySmall" style={{ marginTop: 4, lineHeight: 18, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>{description}</Text>
+    </Pressable>
+  );
+}
+
+function CompactChoice({
+  label,
+  selected,
+  isTech,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  isTech: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.compactChoice,
+        {
+          borderColor: selected ? (isTech ? techTokens.colors.primary : theme.colors.primary) : (isTech ? techTokens.colors.line : theme.colors.outlineVariant),
+          backgroundColor: selected ? (isTech ? 'rgba(85,217,255,0.10)' : theme.colors.primaryContainer) : 'transparent',
+        },
+      ]}
+    >
+      <Text variant="labelMedium" style={{ fontWeight: '800', color: selected ? (isTech ? techTokens.colors.primary : theme.colors.onPrimaryContainer) : (isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant) }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function SettingSwitchRow({
+  title,
+  description,
+  value,
+  isTech,
+  onValueChange,
+}: {
+  title: string;
+  description: string;
+  value: boolean;
+  isTech: boolean;
+  onValueChange: (value: boolean) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View style={[styles.switchRow, { borderTopColor: isTech ? techTokens.colors.line : theme.colors.outlineVariant }]}>
+      <View style={{ flex: 1, paddingRight: 12 }}>
+        <Text variant="titleSmall" style={{ fontWeight: '800', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>{title}</Text>
+        <Text variant="bodySmall" style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>{description}</Text>
+      </View>
+      <Switch value={value} onValueChange={onValueChange} color={isTech ? techTokens.colors.primary : theme.colors.primary} />
+    </View>
+  );
+}
+
+function SettingsLink({
+  icon,
+  title,
+  description,
+  isTech,
+  onPress,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+  isTech: boolean;
+  onPress: () => void;
+}) {
   const theme = useTheme();
   return (
     <MotionTouchable
       onPress={onPress}
       borderRadius={16}
-      style={{ marginTop: 12 }}
-      contentStyle={[styles.managementItem, { backgroundColor: theme.colors.surfaceVariant }]}
+      style={{ marginTop: 10 }}
+      contentStyle={[
+        styles.managementItem,
+        {
+          backgroundColor: isTech ? 'rgba(255,255,255,0.025)' : theme.colors.surfaceVariant,
+          borderColor: isTech ? techTokens.colors.line : 'transparent',
+        },
+      ]}
     >
       <View style={styles.settingRow}>
-        <View style={[styles.rowIcon, { backgroundColor: theme.colors.secondaryContainer }]}> 
-          <Icon source={icon} size={23} color={theme.colors.onSecondaryContainer} />
+        <View style={[styles.rowIcon, { backgroundColor: isTech ? 'rgba(85,217,255,0.09)' : theme.colors.secondaryContainer }]}>
+          <Icon source={icon} size={23} color={isTech ? techTokens.colors.primary : theme.colors.onSecondaryContainer} />
         </View>
         <View style={styles.rowText}>
-          <Text variant="titleMedium" style={{ fontWeight: '800' }}>
-            {title}
-          </Text>
-          <Text variant="bodySmall" style={{ marginTop: 2, color: theme.colors.onSurfaceVariant }}>
-            {description}
-          </Text>
+          <Text variant="titleSmall" style={{ fontWeight: '900', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>{title}</Text>
+          <Text variant="bodySmall" style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>{description}</Text>
         </View>
-        <Icon source="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
+        <Icon source="chevron-right" size={22} color={isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant} />
       </View>
     </MotionTouchable>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  content: {
+    padding: 16,
+    paddingTop: 20,
+    paddingBottom: 48,
+  },
+  classicCard: {
     marginTop: 14,
     padding: 16,
     borderRadius: 22,
     borderWidth: 1,
   },
-  sectionTitle: {
-    fontWeight: '800',
+  techSectionTitle: {
+    color: techTokens.colors.text,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  choiceRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  choiceTile: {
+    flex: 1,
+    minHeight: 132,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 13,
+  },
+  subheading: {
+    marginTop: 18,
+    marginBottom: 9,
+    fontWeight: '900',
+  },
+  compactChoices: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  compactChoice: {
+    minWidth: 78,
+    minHeight: 38,
+    paddingHorizontal: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switchRow: {
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   paletteRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: 8,
   },
   paletteItem: {
-    width: '19%',
-    minWidth: 58,
+    width: '18%',
+    minWidth: 59,
+    borderRadius: 15,
+    borderWidth: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
   },
   colorSwatch: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   managementItem: {
     borderRadius: 16,
+    borderWidth: 1,
     paddingVertical: 12,
     paddingHorizontal: 12,
-  },
-  localModelCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 13,
   },
   settingRow: {
     flexDirection: 'row',
@@ -535,7 +731,7 @@ const styles = StyleSheet.create({
   rowIcon: {
     width: 44,
     height: 44,
-    borderRadius: 15,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -547,14 +743,7 @@ const styles = StyleSheet.create({
   },
   inlineButtons: {
     flexDirection: 'row',
-    marginTop: 12,
     gap: 10,
-  },
-  inlineButton: {
-    flex: 1,
-    borderRadius: 14,
-  },
-  actionButtonContent: {
-    minHeight: 48,
+    marginTop: 12,
   },
 });
