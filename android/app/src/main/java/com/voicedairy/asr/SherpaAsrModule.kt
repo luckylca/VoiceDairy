@@ -9,7 +9,9 @@ import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class SherpaAsrModule(private val reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
-    private val recorder = PcmRecorder(reactContext)
+    private val recorder = PcmRecorder(reactContext) { amplitude ->
+        emitAmplitude(amplitude)
+    }
     private val engine = SherpaAsrEngine(reactContext)
     private var initialized = false
 
@@ -117,17 +119,29 @@ class SherpaAsrModule(private val reactContext: ReactApplicationContext) : React
             putString("state", state)
             message?.let { putString("message", it) }
         }
-        reactContext
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("onAsrStateChange", payload)
+        emitEvent("onAsrStateChange", payload)
     }
 
     private fun emitFinalText(text: String) {
         val payload = Arguments.createMap().apply {
             putString("text", text)
         }
+        emitEvent("onAsrFinalText", payload)
+    }
+
+    private fun emitAmplitude(amplitude: Double) {
+        if (!reactContext.hasActiveCatalystInstance()) return
+        val payload = Arguments.createMap().apply {
+            putDouble("amplitude", amplitude.coerceIn(0.0, 1.0))
+            putDouble("timestamp", System.currentTimeMillis().toDouble())
+        }
+        emitEvent("onAsrAmplitude", payload)
+    }
+
+    private fun emitEvent(eventName: String, payload: com.facebook.react.bridge.WritableMap) {
+        if (!reactContext.hasActiveCatalystInstance()) return
         reactContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("onAsrFinalText", payload)
+            .emit(eventName, payload)
     }
 }
