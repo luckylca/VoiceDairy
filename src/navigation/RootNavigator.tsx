@@ -17,8 +17,37 @@ import { CategoryEntriesScreen } from '../screens/CategoryEntriesScreen';
 import { useAppTheme } from '../theme/AppThemeProvider';
 import { useVisualStyle } from '../theme/VisualStyleProvider';
 import { techTokens } from '../theme/tech/tokens';
+import { TechScreen } from '../components/tech/TechScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+function withAdaptiveTechScreen<P extends object>(Component: React.ComponentType<P>) {
+  function AdaptiveTechRoute(props: P) {
+    const { isTech } = useVisualStyle();
+    return isTech ? (
+      <TechScreen ambient>
+        <Component {...props} />
+      </TechScreen>
+    ) : (
+      <Component {...props} />
+    );
+  }
+
+  AdaptiveTechRoute.displayName = `AdaptiveTechRoute(${Component.displayName ?? Component.name ?? 'Screen'})`;
+  return AdaptiveTechRoute;
+}
+
+const VoiceInputRoute = withAdaptiveTechScreen(VoiceInputScreen);
+const PromptSettingsRoute = withAdaptiveTechScreen(PromptSettingsScreen);
+const LocalModelSettingsRoute = withAdaptiveTechScreen(LocalModelSettingsScreen);
+const LocalModelChatRoute = withAdaptiveTechScreen(LocalModelChatScreen);
+const DeveloperOptionsRoute = withAdaptiveTechScreen(DeveloperOptionsScreen);
+const AboutRoute = withAdaptiveTechScreen(AboutScreen);
+const CategorySettingsRoute = withAdaptiveTechScreen(CategorySettingsScreen);
+const ProjectSettingsRoute = withAdaptiveTechScreen(ProjectSettingsScreen);
+const ProjectDetailRoute = withAdaptiveTechScreen(ProjectDetailScreen);
+const EntryDetailRoute = withAdaptiveTechScreen(EntryDetailScreen);
+const CategoryEntriesRoute = withAdaptiveTechScreen(CategoryEntriesScreen);
 
 export function RootNavigator() {
   const { theme, isDark } = useAppTheme();
@@ -75,17 +104,17 @@ export function RootNavigator() {
         }}
       >
         <Stack.Screen name="MainTabs" component={BottomTabs} options={{ headerShown: false }} />
-        <Stack.Screen name="VoiceInput" component={VoiceInputScreen} options={{ title: '新建记录' }} />
-        <Stack.Screen name="PromptSettings" component={PromptSettingsScreen} options={{ title: '整理提示词' }} />
-        <Stack.Screen name="LocalModelSettings" component={LocalModelSettingsScreen} options={{ title: '本地模型管理' }} />
-        <Stack.Screen name="LocalModelChat" component={LocalModelChatScreen} options={{ title: '本地模型对话' }} />
-        <Stack.Screen name="DeveloperOptions" component={DeveloperOptionsScreen} options={{ title: '开发者选项' }} />
-        <Stack.Screen name="About" component={AboutScreen} options={{ title: '关于 VoiceDiary' }} />
-        <Stack.Screen name="CategorySettings" component={CategorySettingsScreen} options={{ title: '分类设置' }} />
-        <Stack.Screen name="ProjectSettings" component={ProjectSettingsScreen} options={{ title: '项目设置' }} />
-        <Stack.Screen name="ProjectDetail" component={ProjectDetailScreen} options={{ title: '项目详情' }} />
-        <Stack.Screen name="EntryDetail" component={EntryDetailScreen} options={{ title: '笔记详情' }} />
-        <Stack.Screen name="CategoryEntries" component={CategoryEntriesScreen} options={{ title: '分类内容' }} />
+        <Stack.Screen name="VoiceInput" component={VoiceInputRoute} options={{ title: '新建记录' }} />
+        <Stack.Screen name="PromptSettings" component={PromptSettingsRoute} options={{ title: '整理提示词' }} />
+        <Stack.Screen name="LocalModelSettings" component={LocalModelSettingsRoute} options={{ title: '本地模型管理' }} />
+        <Stack.Screen name="LocalModelChat" component={LocalModelChatRoute} options={{ title: '本地模型对话' }} />
+        <Stack.Screen name="DeveloperOptions" component={DeveloperOptionsRoute} options={{ title: '开发者选项' }} />
+        <Stack.Screen name="About" component={AboutRoute} options={{ title: '关于 VoiceDiary' }} />
+        <Stack.Screen name="CategorySettings" component={CategorySettingsRoute} options={{ title: '分类设置' }} />
+        <Stack.Screen name="ProjectSettings" component={ProjectSettingsRoute} options={{ title: '项目设置' }} />
+        <Stack.Screen name="ProjectDetail" component={ProjectDetailRoute} options={{ title: '项目详情' }} />
+        <Stack.Screen name="EntryDetail" component={EntryDetailRoute} options={{ title: '笔记详情' }} />
+        <Stack.Screen name="CategoryEntries" component={CategoryEntriesRoute} options={{ title: '分类内容' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
