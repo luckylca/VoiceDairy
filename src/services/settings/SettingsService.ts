@@ -1,7 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { AppSettings } from '../../types/settings';
+import type {
+  AppSettings,
+  MotionLevel,
+  StartupPage,
+  VisualStyle,
+} from '../../types/settings';
 import { DEFAULT_SYSTEM_PROMPT } from '../llm/PromptBuilder';
 
+// Keep the original key so upgrades continue to read existing user data.
 const SETTINGS_KEY = 'voicedairy.settings.v1';
 const LEGACY_DEFAULT_CATEGORY_SIGNATURE = 'idea、todo、reminder、note、journal、question、project、unknown';
 const listeners = new Set<(settings: AppSettings) => void>();
@@ -17,7 +23,24 @@ export const defaultSettings: AppSettings = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   themeMode: 'system',
   colorSeed: '#6750A4',
+  visualStyle: 'classic',
+  motionLevel: 'standard',
+  startupPage: 'quick_record',
+  autoOrganizeAfterRecognition: false,
+  agentAutoSendVoice: false,
 };
+
+function normalizeVisualStyle(value: unknown): VisualStyle {
+  return value === 'tech' ? 'tech' : 'classic';
+}
+
+function normalizeMotionLevel(value: unknown): MotionLevel {
+  return value === 'full' || value === 'reduced' || value === 'off' ? value : 'standard';
+}
+
+function normalizeStartupPage(value: unknown): StartupPage {
+  return value === 'last_page' || value === 'agent' ? value : 'quick_record';
+}
 
 export async function loadSettings(): Promise<AppSettings> {
   const raw = await AsyncStorage.getItem(SETTINGS_KEY);
@@ -46,6 +69,11 @@ export async function loadSettings(): Promise<AppSettings> {
           ? saved.localModelGpuLayers
           : defaultSettings.localModelGpuLayers,
       systemPrompt: systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+      visualStyle: normalizeVisualStyle(saved.visualStyle),
+      motionLevel: normalizeMotionLevel(saved.motionLevel),
+      startupPage: normalizeStartupPage(saved.startupPage),
+      autoOrganizeAfterRecognition: saved.autoOrganizeAfterRecognition === true,
+      agentAutoSendVoice: saved.agentAutoSendVoice === true,
     };
   } catch {
     return defaultSettings;
