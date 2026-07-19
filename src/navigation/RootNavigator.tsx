@@ -22,7 +22,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
   const { theme, isDark } = useAppTheme();
-  const { isTech } = useVisualStyle();
+  const { isTech, motionLevel, motion } = useVisualStyle();
 
   const navigationTheme = useMemo<NavigationTheme>(
     () => ({
@@ -39,18 +39,36 @@ export function RootNavigator() {
     [isDark, isTech, theme],
   );
 
+  const techAnimation =
+    motionLevel === 'off'
+      ? 'none'
+      : motionLevel === 'reduced'
+        ? 'fade'
+        : motionLevel === 'standard'
+          ? 'fade_from_bottom'
+          : 'slide_from_right';
+
   return (
     <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator
         screenOptions={{
-          animation: isTech ? 'fade_from_bottom' : 'simple_push',
-          animationDuration: isTech ? 260 : 160,
+          animation: isTech ? techAnimation : 'simple_push',
+          animationDuration: isTech
+            ? motionLevel === 'off'
+              ? 0
+              : Math.max(120, Math.round(410 * motion.durationScale))
+            : 160,
           freezeOnBlur: true,
           headerShadowVisible: false,
           headerStyle: {
-            backgroundColor: isTech ? techTokens.colors.surface : theme.colors.surface,
+            backgroundColor: isTech ? 'rgba(5, 18, 27, 0.98)' : theme.colors.surface,
           },
           headerTintColor: isTech ? techTokens.colors.text : theme.colors.onSurface,
+          headerTitleStyle: {
+            fontWeight: '900',
+            letterSpacing: isTech ? 0.45 : 0,
+          },
+          headerBackTitleVisible: false,
           contentStyle: {
             backgroundColor: isTech ? techTokens.colors.background : theme.colors.background,
           },
