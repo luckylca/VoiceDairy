@@ -20,10 +20,13 @@ export function AboutScreen() {
           <Icon source="microphone-outline" size={36} color={theme.colors.onPrimary} />
         </View>
         <Text variant="headlineSmall" style={{ marginTop: 14, fontWeight: '900', color: theme.colors.onPrimaryContainer }}>
-          VoiceDairy
+          VoiceDiary
         </Text>
         <Text variant="bodyMedium" style={{ marginTop: 5, color: theme.colors.onPrimaryContainer }}>
-          Android 本地优先的语音想法与项目需求整理助手
+          会听、会整理、会行动的个人语音日记
+        </Text>
+        <Text variant="labelLarge" style={{ marginTop: 8, color: theme.colors.onPrimaryContainer }}>
+          Speak. Remember. Act.
         </Text>
         <Text variant="labelLarge" style={{ marginTop: 12, color: theme.colors.onPrimaryContainer }}>
           版本 0.1.0
@@ -34,10 +37,10 @@ export function AboutScreen() {
         <Text variant="titleLarge" style={{ fontWeight: '900' }}>
           核心能力
         </Text>
-        <Feature icon="microphone-outline" title="离线语音识别" description="SenseVoice Small INT8 与 sherpa-onnx 在手机端完成转写。" />
+        <Feature icon="microphone-outline" title="快速语音记录" description="打开应用即可开始录音，SenseVoice 在手机端完成转写。" />
         <Feature icon="brain" title="双整理后端" description="可在 OpenAI 兼容云端 API 与 Qwen3.5-0.8B 本地模型之间切换。" />
-        <Feature icon="clipboard-check-outline" title="项目需求联动" description="本地项目助手读取全部项目和需求，并在用户明确确认完成后自动勾选。" />
-        <Feature icon="timeline-text-outline" title="结构化记录" description="把口语内容整理成想法、待办、项目进度与提醒，并写入本地时间线。" />
+        <Feature icon="message-processing-outline" title="独立 Agent" description="复杂任务通过动作卡片预览，确认后才会修改本地数据。" />
+        <Feature icon="timeline-text-outline" title="结构化时间线" description="把口语内容整理成想法、待办、项目进展与提醒。" />
       </View>
 
       <View style={cardStyle}>
@@ -49,7 +52,7 @@ export function AboutScreen() {
         </Text>
         <Divider style={{ marginVertical: 16 }} />
         <Text variant="bodyMedium" style={{ lineHeight: 23, color: theme.colors.onSurfaceVariant }}>
-          记录、条目、项目、项目需求和设置目前存储在 AsyncStorage。Qwen GGUF 模型保存在应用私有目录，卸载应用可能同时删除模型文件。
+          记录、条目、项目、项目需求、Agent 当前会话和设置目前存储在本地。Qwen GGUF 模型保存在应用私有目录，卸载应用可能同时删除模型文件。
         </Text>
       </View>
 
@@ -67,7 +70,7 @@ export function AboutScreen() {
           当前开发状态
         </Text>
         <Text variant="bodyMedium" style={{ marginTop: 10, lineHeight: 23, color: theme.colors.onSurfaceVariant }}>
-          Android arm64-v8a 为当前主要目标。WebDAV 页面目前保存实验配置和导出 JSON 快照，正式上传、下载、合并与冲突处理仍待完成。
+          Android arm64-v8a 为当前主要目标。科技界面、快速记录和安全 Agent 已建立基础闭环；真实 PCM 波形、本地通知、多会话管理和完整动作编辑仍会继续完善。
         </Text>
       </View>
     </ScrollView>
