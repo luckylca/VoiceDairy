@@ -59,10 +59,7 @@ export function TechEntrance({
               ? [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) }]
               : [{ translateY: translate }];
 
-    return {
-      opacity: progress,
-      transform,
-    };
+    return { opacity: progress, transform };
   }, [distance, from, progress]);
 
   return <Animated.View style={[style, animatedStyle]}>{children}</Animated.View>;
@@ -70,7 +67,7 @@ export function TechEntrance({
 
 type TechShimmerProps = {
   width?: number;
-  height?: number | string;
+  height?: number | 'auto' | `${number}%`;
   color?: string;
   duration?: number;
   style?: StyleProp<ViewStyle>;
@@ -100,11 +97,7 @@ export function TechShimmer({
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
-        Animated.timing(progress, {
-          toValue: 0,
-          duration: 1,
-          useNativeDriver: true,
-        }),
+        Animated.timing(progress, { toValue: 0, duration: 1, useNativeDriver: true }),
         Animated.delay(Math.round(900 * motion.durationScale)),
       ]),
     );
@@ -147,39 +140,10 @@ export function TechCornerBrackets({ color = techTokens.colors.primary }: { colo
 }
 
 const styles = StyleSheet.create({
-  shimmer: {
-    position: 'absolute',
-    top: -30,
-    bottom: -30,
-  },
-  corner: {
-    position: 'absolute',
-    width: 11,
-    height: 11,
-    opacity: 0.68,
-  },
-  topLeft: {
-    left: 6,
-    top: 6,
-    borderLeftWidth: 1.5,
-    borderTopWidth: 1.5,
-  },
-  topRight: {
-    right: 6,
-    top: 6,
-    borderRightWidth: 1.5,
-    borderTopWidth: 1.5,
-  },
-  bottomLeft: {
-    left: 6,
-    bottom: 6,
-    borderLeftWidth: 1.5,
-    borderBottomWidth: 1.5,
-  },
-  bottomRight: {
-    right: 6,
-    bottom: 6,
-    borderRightWidth: 1.5,
-    borderBottomWidth: 1.5,
-  },
+  shimmer: { position: 'absolute', top: -30, bottom: -30 },
+  corner: { position: 'absolute', width: 11, height: 11, opacity: 0.68 },
+  topLeft: { left: 6, top: 6, borderLeftWidth: 1.5, borderTopWidth: 1.5 },
+  topRight: { right: 6, top: 6, borderRightWidth: 1.5, borderTopWidth: 1.5 },
+  bottomLeft: { left: 6, bottom: 6, borderLeftWidth: 1.5, borderBottomWidth: 1.5 },
+  bottomRight: { right: 6, bottom: 6, borderRightWidth: 1.5, borderBottomWidth: 1.5 },
 });
