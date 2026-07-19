@@ -9,7 +9,6 @@ import { organizeTextLocally } from './LocalModelService';
 export type OrganizeTextOptions = {
   text: string;
   settings: AppSettings;
-  demoMode?: boolean;
 };
 
 function normalizeApiBaseUrl(value: string): string {
@@ -75,38 +74,6 @@ export async function fetchAvailableModels(settings: AppSettings): Promise<strin
   return models;
 }
 
-function buildDemoResult(text: string): LlmOrganizeResult {
-  const normalized = text.trim();
-  const hasReminder = /提醒|明天|后天|下周|晚上|早上|点钟|日期/.test(normalized);
-  const hasProject = /项目|版本|进度|里程碑|需求/.test(normalized);
-  const hasTodo = /要|需要|记得|完成|整理|修改|做/.test(normalized);
-  const type = hasReminder ? 'reminder' : hasProject ? 'project' : hasTodo ? 'todo' : 'idea';
-
-  return {
-    summary: normalized.length > 32 ? `${normalized.slice(0, 32)}…` : normalized || '演示整理结果',
-    items: [
-      {
-        type,
-        title:
-          type === 'reminder'
-            ? '待提醒事项'
-            : type === 'project'
-              ? '项目进度'
-              : type === 'todo'
-                ? '待处理事项'
-                : '新的想法',
-        content: normalized || '这是一条演示内容。',
-        datetime: null,
-        due_date: null,
-        priority: 'normal',
-        tags: ['语音记录'],
-        project: type === 'project' ? '未命名项目' : null,
-        confidence: 0.72,
-      },
-    ],
-  };
-}
-
 async function organizeTextWithCloud(
   text: string,
   settings: AppSettings,
@@ -151,9 +118,7 @@ async function organizeTextWithCloud(
 }
 
 export async function organizeText(options: OrganizeTextOptions): Promise<LlmOrganizeResult> {
-  const { text, settings, demoMode } = options;
-  if (demoMode) return buildDemoResult(text);
-
+  const { text, settings } = options;
   const projects = await listProjects();
   if (settings.organizerProvider === 'local') {
     return organizeTextLocally(text, settings, projects);
