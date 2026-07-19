@@ -1,8 +1,9 @@
 import type { ConfigurableCategoryType } from '../types/category';
 
 export type RootTabParamList = {
-  Home: undefined;
-  Category: undefined;
+  Record: undefined;
+  Timeline: undefined;
+  Agent: undefined;
   Settings: undefined;
 };
 
