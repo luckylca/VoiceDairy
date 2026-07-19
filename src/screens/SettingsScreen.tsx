@@ -35,6 +35,7 @@ export function SettingsScreen() {
   const { setThemeMode, setColorSeed } = useAppTheme();
   const { showNotification } = useFluidNotification();
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [localModelStatus, setLocalModelStatus] = useState<LocalModelStatus | null>(null);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelQuery, setModelQuery] = useState('');
@@ -45,11 +46,27 @@ export function SettingsScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      Promise.all([loadSettings(), getLocalModelStatus()]).then(([current, modelStatus]) => {
-        if (!active) return;
-        setSettings(current);
-        setLocalModelStatus(modelStatus);
-      });
+      setSettingsReady(false);
+
+      void (async () => {
+        try {
+          const current = await loadSettings();
+          if (!active) return;
+
+          setSettings(current);
+          setSettingsReady(true);
+
+          if (current.organizerProvider === 'local') {
+            const modelStatus = await getLocalModelStatus();
+            if (active) setLocalModelStatus(modelStatus);
+          } else {
+            setLocalModelStatus(null);
+          }
+        } catch {
+          if (active) setSettingsReady(true);
+        }
+      })();
+
       return () => {
         active = false;
       };
@@ -61,6 +78,8 @@ export function SettingsScreen() {
     if (!keyword) return availableModels;
     return availableModels.filter(model => model.toLowerCase().includes(keyword));
   }, [availableModels, modelQuery]);
+
+  const isLocalOrganizer = settingsReady && settings.organizerProvider === 'local';
 
   function patchSettings(patch: Partial<AppSettings>) {
     setSettings(previous => ({ ...previous, ...patch }));
@@ -98,16 +117,29 @@ export function SettingsScreen() {
   async function handleOrganizerProviderChange(value: string) {
     const organizerProvider = value as OrganizerProvider;
     const next = { ...settings, organizerProvider };
+
     setSettings(next);
+    setModelDialogVisible(false);
+    if (organizerProvider === 'cloud') {
+      setLocalModelStatus(null);
+    }
+
     await saveSettings(next);
+
+    if (organizerProvider === 'local') {
+      try {
+        setLocalModelStatus(await getLocalModelStatus());
+      } catch {
+        setLocalModelStatus(null);
+      }
+    }
+
     showNotification({
       title: organizerProvider === 'local' ? '已启用本地 Qwen 整理' : '已切换到云端 API',
       message:
         organizerProvider === 'local'
-          ? localModelStatus?.exists
-            ? '识别后的文本会在手机上整理。'
-            : '请在下方进入本地模型管理并下载模型。'
-          : '识别后的文本会发送到配置的兼容 API。',
+          ? '识别后的文本会在手机上整理；本地模型管理入口已显示。'
+          : '识别后的文本会发送到配置的兼容 API；本地模型入口已隐藏。',
       kind: organizerProvider === 'local' && !localModelStatus?.exists ? 'warning' : 'success',
       icon: organizerProvider === 'local' ? 'cellphone' : 'cloud-outline',
     });
@@ -116,7 +148,7 @@ export function SettingsScreen() {
   async function handleSaveCloud() {
     setSavingCloud(true);
     try {
-      await saveSettings(settings);
+      await saveSettings({ ...settings, organizerProvider: 'cloud' });
       showNotification({
         title: '云端 API 配置已保存',
         message: `${settings.modelName || '未选择模型'} · ${settings.apiBaseUrl || '未填写地址'}`,
@@ -232,7 +264,7 @@ export function SettingsScreen() {
             内容管理
           </Text>
           <Text variant="bodySmall" style={{ marginTop: 5, color: theme.colors.onSurfaceVariant }}>
-            管理分类、项目和可以被本地助手自动勾选的项目需求。
+            管理分类、项目和项目需求。
           </Text>
           <SettingsLink
             icon="shape-outline"
@@ -253,20 +285,58 @@ export function SettingsScreen() {
             智能整理
           </Text>
           <Text variant="bodySmall" style={{ marginTop: 5, color: theme.colors.onSurfaceVariant }}>
-            SenseVoice 始终在本地转写；这里只决定由云端 API 还是本地 Qwen 整理文本。
+            SenseVoice 始终在本地转写；这里只决定后续使用云端 API 还是本地 Qwen。
           </Text>
           <SegmentedButtons
             value={settings.organizerProvider}
             onValueChange={handleOrganizerProviderChange}
             buttons={[
-              { value: 'cloud', label: '云端 API', icon: 'cloud-outline' },
-              { value: 'local', label: '本地 Qwen', icon: 'cellphone' },
+              { value: 'cloud', label: '云端 API', icon: 'cloud-outline', disabled: !settingsReady },
+              { value: 'local', label: '本地 Qwen', icon: 'cellphone', disabled: !settingsReady },
             ]}
             style={{ marginTop: 14 }}
           />
 
-          {settings.organizerProvider === 'cloud' ? (
-            <View style={{ marginTop: 4 }}>
+          {!settingsReady ? (
+            <Text variant="bodySmall" style={{ marginTop: 14, color: theme.colors.onSurfaceVariant }}>
+              正在读取整理后端设置…
+            </Text>
+          ) : isLocalOrganizer ? (
+            <View key="local-organizer" style={{ marginTop: 14 }}>
+              <MotionTouchable
+                onPress={() => navigation.navigate('LocalModelSettings')}
+                borderRadius={18}
+                contentStyle={[
+                  styles.localModelCard,
+                  {
+                    backgroundColor: theme.colors.primaryContainer,
+                    borderColor: theme.colors.primary,
+                  },
+                ]}
+              >
+                <View style={styles.settingRow}>
+                  <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}> 
+                    <Icon source="brain" size={24} color={theme.colors.onTertiaryContainer} />
+                  </View>
+                  <View style={styles.rowText}>
+                    <Text variant="titleMedium" style={{ fontWeight: '900' }}>
+                      本地模型管理
+                    </Text>
+                    <Text variant="bodySmall" style={{ marginTop: 3, color: theme.colors.onSurfaceVariant }}>
+                      {localModelStatus?.exists
+                        ? `${localModelStatus.loaded ? '已加载' : '已下载'} · ${formatBytes(localModelStatus.bytes)}`
+                        : 'Qwen3.5-0.8B Q4_0 · 约563MB · 尚未下载'}
+                    </Text>
+                    <Text variant="labelSmall" style={{ marginTop: 4, color: theme.colors.primary }}>
+                      下载、加载、运行设置与本地对话
+                    </Text>
+                  </View>
+                  <Icon source="chevron-right" size={23} color={theme.colors.onSurfaceVariant} />
+                </View>
+              </MotionTouchable>
+            </View>
+          ) : (
+            <View key="cloud-organizer" style={{ marginTop: 4 }}>
               <TextInput
                 mode="outlined"
                 label="API Base URL"
@@ -316,49 +386,12 @@ export function SettingsScreen() {
                 </Button>
               </View>
             </View>
-          ) : (
-            <View style={{ marginTop: 14 }}>
-              <MotionTouchable
-                onPress={() => navigation.navigate('LocalModelSettings')}
-                borderRadius={18}
-                contentStyle={[
-                  styles.localModelCard,
-                  {
-                    backgroundColor: theme.colors.primaryContainer,
-                    borderColor: theme.colors.primary,
-                  },
-                ]}
-              >
-                <View style={styles.settingRow}>
-                  <View style={[styles.rowIcon, { backgroundColor: theme.colors.tertiaryContainer }]}> 
-                    <Icon source="brain" size={24} color={theme.colors.onTertiaryContainer} />
-                  </View>
-                  <View style={styles.rowText}>
-                    <Text variant="titleMedium" style={{ fontWeight: '900' }}>
-                      本地模型管理
-                    </Text>
-                    <Text variant="bodySmall" style={{ marginTop: 3, color: theme.colors.onSurfaceVariant }}>
-                      {localModelStatus?.exists
-                        ? `${localModelStatus.loaded ? '已加载' : '已下载'} · ${formatBytes(localModelStatus.bytes)}`
-                        : 'Qwen3.5-0.8B Q4_0 · 约563MB · 尚未下载'}
-                    </Text>
-                    <Text variant="labelSmall" style={{ marginTop: 4, color: theme.colors.primary }}>
-                      下载、加载、运行设置与本地对话
-                    </Text>
-                  </View>
-                  <Icon source="chevron-right" size={23} color={theme.colors.onSurfaceVariant} />
-                </View>
-              </MotionTouchable>
-              <Text variant="bodySmall" style={{ marginTop: 12, color: theme.colors.onSurfaceVariant }}>
-                本地对话每次发送都会读取手机中当前保存的全部项目、项目说明、需求和完成状态。
-              </Text>
-            </View>
           )}
 
           <SettingsLink
             icon="application-edit-outline"
             title="整理提示词"
-            description="云端和本地整理共用规则，并自动附加当前全部项目内容"
+            description="云端和本地整理共用规则"
             onPress={() => navigation.navigate('PromptSettings')}
           />
         </View>

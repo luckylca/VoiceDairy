@@ -17,7 +17,7 @@ export function AboutScreen() {
     >
       <View style={[styles.hero, { backgroundColor: theme.colors.primaryContainer }]}> 
         <View style={[styles.logo, { backgroundColor: theme.colors.primary }]}> 
-          <Icon source="microphone-message" size={36} color={theme.colors.onPrimary} />
+          <Icon source="microphone-outline" size={36} color={theme.colors.onPrimary} />
         </View>
         <Text variant="headlineSmall" style={{ marginTop: 14, fontWeight: '900', color: theme.colors.onPrimaryContainer }}>
           VoiceDairy
