@@ -8,7 +8,7 @@ export async function requestMicrophonePermission(): Promise<boolean> {
 
   const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
     title: '需要麦克风权限',
-    message: 'VoiceDairy 需要使用麦克风在本地录音，然后进行端侧语音识别。',
+    message: 'VoiceDiary 需要使用麦克风在本地录音，然后进行端侧语音识别。',
     buttonPositive: '允许',
     buttonNegative: '拒绝',
   });
