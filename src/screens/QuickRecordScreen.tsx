@@ -14,7 +14,12 @@ import type { LlmOrganizeResult } from '../types/llm';
 import type { RecordSource } from '../types/record';
 import type { Entry } from '../types/entry';
 import { defaultSettings, loadSettings } from '../services/settings/SettingsService';
-import { initAsr, startVoiceRecord, stopVoiceRecord } from '../services/asr/AsrService';
+import {
+  initAsr,
+  startVoiceRecord,
+  stopVoiceRecord,
+  subscribeAsrAmplitude,
+} from '../services/asr/AsrService';
 import { organizeText } from '../services/llm/LlmService';
 import { getLocalModelStatus } from '../services/llm/LocalModelService';
 import { saveOrganizedResult } from '../services/records/CreateRecordService';
@@ -28,9 +33,13 @@ import { TechScreen } from '../components/tech/TechScreen';
 import { TechPanel } from '../components/tech/TechPanel';
 import { TechButton } from '../components/tech/TechButton';
 import { TechVoiceOrb, type VoiceOrbState } from '../components/tech/TechVoiceOrb';
+import { TechWaveform } from '../components/tech/TechWaveform';
+import { TechEntrance } from '../components/tech/TechMotion';
 import { techTokens } from '../theme/tech/tokens';
 
 type Phase = VoiceOrbState | 'editing';
+
+const MAX_WAVEFORM_POINTS = 34;
 
 function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -82,6 +91,8 @@ export function QuickRecordScreen() {
   const [errorMessage, setErrorMessage] = useState('');
   const [todayEntries, setTodayEntries] = useState<Entry[]>([]);
   const [recentEntry, setRecentEntry] = useState<Entry | null>(null);
+  const [amplitude, setAmplitude] = useState(0);
+  const [waveform, setWaveform] = useState<number[]>([]);
 
   const refreshSummary = useCallback(async () => {
     const entries = await listEntries();
@@ -95,6 +106,14 @@ export function QuickRecordScreen() {
       void refreshSummary();
     }, [refreshSummary]),
   );
+
+  useEffect(() => {
+    return subscribeAsrAmplitude(event => {
+      const level = Math.max(0, Math.min(1, event.amplitude));
+      setAmplitude(level);
+      setWaveform(current => [...current.slice(-(MAX_WAVEFORM_POINTS - 1)), level]);
+    });
+  }, []);
 
   useEffect(() => {
     if (phase !== 'recording') return;
@@ -137,6 +156,8 @@ export function QuickRecordScreen() {
     setOrganizedResult(null);
     setText('');
     setSeconds(0);
+    setAmplitude(0);
+    setWaveform([]);
     setPhase('initializing');
     try {
       await ensureAsrReady();
@@ -170,6 +191,7 @@ export function QuickRecordScreen() {
 
   async function stopAndRecognize() {
     setPhase('recognizing');
+    setAmplitude(0);
     try {
       const result = await stopVoiceRecord();
       const recognized = result.text.trim();
@@ -206,6 +228,8 @@ export function QuickRecordScreen() {
     setText('');
     setOrganizedResult(null);
     setErrorMessage('');
+    setAmplitude(0);
+    setWaveform([]);
   }
 
   async function saveResult(result: LlmOrganizeResult) {
@@ -253,33 +277,34 @@ export function QuickRecordScreen() {
         整理预览 · {organizedResult.items.length} 项
       </Text>
       {organizedResult.items.map((item, index) => (
-        <View
-          key={`${item.type}-${index}`}
-          style={[
-            styles.previewItem,
-            {
-              backgroundColor: isTech ? 'rgba(85, 217, 255, 0.06)' : theme.colors.surfaceVariant,
-              borderColor: isTech ? techTokens.colors.line : theme.colors.outlineVariant,
-            },
-          ]}
-        >
-          <Text variant="labelSmall" style={{ color: isTech ? techTokens.colors.primary : theme.colors.primary }}>
-            {item.type.toUpperCase()}
-          </Text>
-          <Text variant="titleSmall" style={{ marginTop: 4, fontWeight: '800', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>
-            {item.title}
-          </Text>
-          {item.project ? (
-            <Text variant="bodySmall" style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
-              项目：{item.project}
+        <TechEntrance key={`${item.type}-${index}`} index={index} from="right">
+          <View
+            style={[
+              styles.previewItem,
+              {
+                backgroundColor: isTech ? 'rgba(85, 217, 255, 0.06)' : theme.colors.surfaceVariant,
+                borderColor: isTech ? techTokens.colors.line : theme.colors.outlineVariant,
+              },
+            ]}
+          >
+            <Text variant="labelSmall" style={{ color: isTech ? techTokens.colors.primary : theme.colors.primary }}>
+              {item.type.toUpperCase()}
             </Text>
-          ) : null}
-          {item.datetime || item.due_date ? (
-            <Text variant="bodySmall" style={{ marginTop: 3, color: techTokens.colors.warning }}>
-              时间：{item.datetime ?? item.due_date}
+            <Text variant="titleSmall" style={{ marginTop: 4, fontWeight: '800', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>
+              {item.title}
             </Text>
-          ) : null}
-        </View>
+            {item.project ? (
+              <Text variant="bodySmall" style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
+                项目：{item.project}
+              </Text>
+            ) : null}
+            {item.datetime || item.due_date ? (
+              <Text variant="bodySmall" style={{ marginTop: 3, color: techTokens.colors.warning }}>
+                时间：{item.datetime ?? item.due_date}
+              </Text>
+            ) : null}
+          </View>
+        </TechEntrance>
       ))}
       <Text variant="bodySmall" style={{ marginTop: 8, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
         带时间的提醒会在你点击确认保存后才写入。
@@ -288,7 +313,7 @@ export function QuickRecordScreen() {
   ) : null;
 
   const editor = isTech ? (
-    <TechPanel accent style={{ marginTop: 18 }}>
+    <TechPanel accent index={1} style={{ marginTop: 18 }}>
       <Text style={styles.techSectionTitle}>检查识别文字</Text>
       <NativeTextInput
         multiline
@@ -371,24 +396,45 @@ export function QuickRecordScreen() {
     </Surface>
   );
 
-  const summaryPanel = (
+  const summaryPanel = isTech ? (
+    <TechEntrance index={3}>
+      <View style={styles.summaryRow}>
+        <Pressable onPress={() => openMainTab('timeline')} style={{ flex: 1 }}>
+          <View style={[styles.summaryItem, styles.techSummaryItem, { borderColor: techTokens.colors.line }]}>
+            <View style={styles.summaryStatusLine} />
+            <Text variant="labelSmall" style={{ color: techTokens.colors.textMuted }}>今日记录</Text>
+            <Text variant="headlineSmall" style={{ marginTop: 4, fontWeight: '900', color: techTokens.colors.text }}>
+              {todayEntries.length}
+            </Text>
+            <Text style={styles.summaryCode}>TODAY.LOG</Text>
+          </View>
+        </Pressable>
+        <Pressable onPress={() => openMainTab('timeline')} style={{ flex: 2, marginLeft: 10 }}>
+          <View style={[styles.summaryItem, styles.techSummaryItem, { borderColor: techTokens.colors.line }]}>
+            <View style={[styles.summaryStatusLine, { backgroundColor: techTokens.colors.secondary }]} />
+            <Text variant="labelSmall" style={{ color: techTokens.colors.textMuted }}>最近一条</Text>
+            <Text numberOfLines={1} variant="titleSmall" style={{ marginTop: 6, fontWeight: '800', color: techTokens.colors.text }}>
+              {recentEntry?.title ?? '还没有记录'}
+            </Text>
+            <Text style={styles.summaryCode}>LAST.ENTRY</Text>
+          </View>
+        </Pressable>
+      </View>
+    </TechEntrance>
+  ) : (
     <View style={styles.summaryRow}>
       <Pressable onPress={() => openMainTab('timeline')} style={{ flex: 1 }}>
-        <View style={[styles.summaryItem, { borderColor: isTech ? techTokens.colors.line : theme.colors.outlineVariant }]}>
-          <Text variant="labelSmall" style={{ color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
-            今日记录
-          </Text>
-          <Text variant="headlineSmall" style={{ marginTop: 4, fontWeight: '900', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>
+        <View style={[styles.summaryItem, { borderColor: theme.colors.outlineVariant }]}>
+          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>今日记录</Text>
+          <Text variant="headlineSmall" style={{ marginTop: 4, fontWeight: '900', color: theme.colors.onSurface }}>
             {todayEntries.length}
           </Text>
         </View>
       </Pressable>
       <Pressable onPress={() => openMainTab('timeline')} style={{ flex: 2, marginLeft: 10 }}>
-        <View style={[styles.summaryItem, { borderColor: isTech ? techTokens.colors.line : theme.colors.outlineVariant }]}>
-          <Text variant="labelSmall" style={{ color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
-            最近一条
-          </Text>
-          <Text numberOfLines={1} variant="titleSmall" style={{ marginTop: 6, fontWeight: '800', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>
+        <View style={[styles.summaryItem, { borderColor: theme.colors.outlineVariant }]}>
+          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>最近一条</Text>
+          <Text numberOfLines={1} variant="titleSmall" style={{ marginTop: 6, fontWeight: '800', color: theme.colors.onSurface }}>
             {recentEntry?.title ?? '还没有记录'}
           </Text>
         </View>
@@ -400,14 +446,25 @@ export function QuickRecordScreen() {
     return (
       <TechScreen>
         <ScrollView contentContainerStyle={styles.techContent} showsVerticalScrollIndicator={false}>
-          <Text style={styles.techDate}>{dateLabel}</Text>
-          <Text style={styles.techTitle}>{greetingText()}</Text>
-          <Text style={styles.techSubtitle}>Speak. Remember. Act.</Text>
+          <TechEntrance from="top">
+            <View style={styles.techHeaderRow}>
+              <View>
+                <Text style={styles.techDate}>{dateLabel}</Text>
+                <Text style={styles.techTitle}>{greetingText()}</Text>
+                <Text style={styles.techSubtitle}>SPEAK · REMEMBER · ACT</Text>
+              </View>
+              <View style={styles.systemBadge}>
+                <View style={styles.systemDot} />
+                <Text style={styles.systemBadgeText}>ONLINE</Text>
+              </View>
+            </View>
+          </TechEntrance>
 
           {phase === 'editing' ? editor : (
             <>
               <TechVoiceOrb
                 state={orbState}
+                amplitude={amplitude}
                 durationText={phase === 'recording' ? formatDuration(seconds) : undefined}
                 disabled={busy || phase === 'success'}
                 onPress={() => {
@@ -415,8 +472,16 @@ export function QuickRecordScreen() {
                   else if (phase === 'idle' || phase === 'error') void startRecording();
                 }}
               />
+              <TechEntrance index={1}>
+                <TechWaveform
+                  levels={waveform}
+                  amplitude={amplitude}
+                  active={phase === 'recording'}
+                  label={phase === 'recognizing' ? 'BUFFER LOCKED · TRANSCRIBING' : 'LIVE PCM SIGNAL'}
+                />
+              </TechEntrance>
               {phase === 'recording' ? (
-                <TechButton label="取消本次录音" variant="danger" icon="close" onPress={cancelRecording} />
+                <TechButton label="取消本次录音" variant="danger" icon="close" onPress={cancelRecording} style={{ marginTop: 12 }} />
               ) : null}
               {errorMessage && phase === 'error' ? <Text style={styles.techErrorCentered}>{errorMessage}</Text> : null}
             </>
@@ -497,8 +562,13 @@ export function QuickRecordScreen() {
 const styles = StyleSheet.create({
   techContent: {
     paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingTop: 22,
     paddingBottom: 38,
+  },
+  techHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
   techDate: {
     color: techTokens.colors.textMuted,
@@ -515,8 +585,33 @@ const styles = StyleSheet.create({
   techSubtitle: {
     marginTop: 7,
     color: techTokens.colors.primary,
-    fontSize: 12,
-    letterSpacing: 2,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.65,
+  },
+  systemBadge: {
+    marginTop: 2,
+    minHeight: 28,
+    paddingHorizontal: 9,
+    borderWidth: 1,
+    borderColor: techTokens.colors.line,
+    borderRadius: 9,
+    backgroundColor: 'rgba(82,230,184,0.06)',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  systemDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: techTokens.colors.success,
+    marginRight: 6,
+  },
+  systemBadgeText: {
+    color: techTokens.colors.success,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
   techSectionTitle: {
     color: techTokens.colors.text,
@@ -545,8 +640,8 @@ const styles = StyleSheet.create({
     color: techTokens.colors.error,
     textAlign: 'center',
     lineHeight: 20,
-    marginTop: -8,
-    marginBottom: 14,
+    marginTop: 8,
+    marginBottom: 5,
   },
   techActionStack: {
     marginTop: 18,
@@ -592,11 +687,32 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
   summaryItem: {
-    minHeight: 76,
+    minHeight: 82,
     borderWidth: 1,
     borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 12,
     backgroundColor: 'rgba(255,255,255,0.02)',
+    overflow: 'hidden',
+  },
+  techSummaryItem: {
+    backgroundColor: 'rgba(7, 23, 32, 0.78)',
+  },
+  summaryStatusLine: {
+    position: 'absolute',
+    left: 0,
+    top: 12,
+    bottom: 12,
+    width: 2,
+    backgroundColor: techTokens.colors.primary,
+  },
+  summaryCode: {
+    position: 'absolute',
+    right: 9,
+    bottom: 7,
+    color: 'rgba(143,168,181,0.36)',
+    fontSize: 7,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
 });
