@@ -1,5 +1,14 @@
 import { PermissionsAndroid, Platform } from 'react-native';
-import { SherpaAsr, type AsrInitOptions, type AsrResult } from './NativeSherpaAsr';
+import {
+  SherpaAsr,
+  subscribeAsrAmplitude,
+  type AsrAmplitudeEvent,
+  type AsrInitOptions,
+  type AsrResult,
+} from './NativeSherpaAsr';
+
+export type { AsrAmplitudeEvent };
+export { subscribeAsrAmplitude };
 
 export async function requestMicrophonePermission(): Promise<boolean> {
   if (Platform.OS !== 'android') {
