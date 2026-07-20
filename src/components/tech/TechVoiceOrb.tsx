@@ -1,10 +1,10 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Icon } from 'react-native-paper';
 import { techTokens } from '../../theme/tech/tokens';
 import { useVisualStyle } from '../../theme/VisualStyleProvider';
 import { useMainTabActive } from '../../navigation/MainTabActivityContext';
-import { useTechMotionPhase } from './TechMotionClock';
+import { useTechMotionValue } from './TechMotionProvider';
 
 export type VoiceOrbState =
   | 'idle'
@@ -40,23 +40,12 @@ export function TechVoiceOrb({
   durationText,
   amplitude = 0,
 }: TechVoiceOrbProps) {
-  const { motion, motionLevel } = useVisualStyle();
+  const { motion } = useVisualStyle();
   const tabActive = useMainTabActive();
+  const { phase, running } = useTechMotionValue();
   const meta = stateMeta[state];
   const level = state === 'recording' ? Math.max(0, Math.min(1, amplitude)) : 0;
-  const clockEnabled = tabActive && motion.ambient && state !== 'recording' && state !== 'success' && state !== 'error';
-  const busyState = state === 'initializing' || state === 'recognizing' || state === 'organizing';
-  const phase = useTechMotionPhase(
-    clockEnabled,
-    busyState ? 10 : motionLevel === 'full' ? 22 : 13,
-    busyState ? 2400 : Math.max(4400, Math.round(7800 * Math.max(0.65, motion.durationScale))),
-  );
-  const pulse = (Math.sin(phase * Math.PI * 2) + 1) / 2;
-  const idleMotion = clockEnabled ? pulse : 0;
-  const coreScale = 1 + level * 0.075 + idleMotion * (busyState ? 0.035 : 0.018);
-  const ringScale = 1 + level * 0.12 + idleMotion * (busyState ? 0.11 : 0.06);
-  const outerRotation = clockEnabled ? `${phase * 360}deg` : '14deg';
-  const innerRotation = clockEnabled ? `${-phase * 360}deg` : '-19deg';
+  const runOrbit = tabActive && running && motion.ambient && state !== 'recording';
 
   const amplitudeBars = Array.from({ length: 9 }, (_, index) => {
     const centerDistance = Math.abs(index - 4) / 4;
@@ -77,66 +66,118 @@ export function TechVoiceOrb({
     );
   });
 
+  const idlePulse = runOrbit
+    ? phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.98, 1.035, 0.98] })
+    : 1;
+
   return (
     <View style={styles.root}>
-      <View
-        style={[
-          styles.ringPulse,
-          {
-            borderColor: meta.color,
-            opacity: state === 'recording' ? 0.14 + level * 0.28 : 0.08 + idleMotion * 0.18,
-            transform: [{ scale: ringScale }],
-          },
-        ]}
-      />
+      <View style={styles.stage}>
+        <Animated.View
+          style={[
+            styles.ringPulse,
+            {
+              borderColor: meta.color,
+              opacity:
+                state === 'recording'
+                  ? 0.14 + level * 0.28
+                  : runOrbit
+                    ? phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.1, 0.26, 0.1] })
+                    : 0.12,
+              transform: [
+                {
+                  scale:
+                    state === 'recording'
+                      ? 1 + level * 0.12
+                      : runOrbit
+                        ? phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.96, 1.12, 0.96] })
+                        : 1,
+                },
+              ],
+            },
+          ]}
+        />
 
-      <View style={[styles.orbitOuter, { borderColor: `${meta.color}36`, transform: [{ rotate: outerRotation }] }]}>
-        <View style={[styles.orbitNode, styles.nodeOne, { backgroundColor: meta.color }]} />
-        <View style={[styles.orbitNodeSmall, styles.nodeTwo, { backgroundColor: techTokens.colors.secondary }]} />
-      </View>
-      <View style={[styles.orbitInner, { borderColor: `${meta.color}48`, transform: [{ rotate: innerRotation }] }]}>
-        <View style={[styles.orbitNodeSmall, styles.nodeThree, { backgroundColor: techTokens.colors.success }]} />
-      </View>
+        <Animated.View
+          renderToHardwareTextureAndroid
+          style={[
+            styles.orbitOuter,
+            { borderColor: `${meta.color}36` },
+            {
+              transform: [
+                {
+                  rotate: runOrbit
+                    ? phase.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] })
+                    : '14deg',
+                },
+              ],
+            },
+          ]}
+        >
+          <View style={[styles.orbitNode, styles.nodeOne, { backgroundColor: meta.color }]} />
+          <View style={[styles.orbitNodeSmall, styles.nodeTwo, { backgroundColor: techTokens.colors.secondary }]} />
+        </Animated.View>
+        <Animated.View
+          renderToHardwareTextureAndroid
+          style={[
+            styles.orbitInner,
+            { borderColor: `${meta.color}48` },
+            {
+              transform: [
+                {
+                  rotate: runOrbit
+                    ? phase.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-360deg'] })
+                    : '-19deg',
+                },
+              ],
+            },
+          ]}
+        >
+          <View style={[styles.orbitNodeSmall, styles.nodeThree, { backgroundColor: techTokens.colors.success }]} />
+        </Animated.View>
 
-      <View style={[styles.crossHairHorizontal, { backgroundColor: `${meta.color}20` }]} />
-      <View style={[styles.crossHairVertical, { backgroundColor: `${meta.color}20` }]} />
+        <View style={[styles.crossHairHorizontal, { backgroundColor: `${meta.color}20` }]} />
+        <View style={[styles.crossHairVertical, { backgroundColor: `${meta.color}20` }]} />
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={meta.label}
-        accessibilityState={{ disabled }}
-        disabled={disabled}
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.pressLayer,
-          {
-            opacity: disabled ? 0.55 : 1,
-            transform: [
+        <Animated.View style={[styles.corePosition, { transform: [{ scale: idlePulse }] }]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={meta.label}
+            accessibilityState={{ disabled }}
+            disabled={disabled}
+            onPress={onPress}
+            style={({ pressed }) => [
+              styles.pressLayer,
               {
-                scale: coreScale * (pressed && motion.pressFeedback ? 0.96 : 1),
-              },
-            ],
-          },
-        ]}
-      >
-        <View style={[styles.core, { borderColor: `${meta.color}C7` }]}>
-          <View
-            style={[
-              styles.coreGlow,
-              {
-                backgroundColor: `${meta.color}16`,
-                opacity: 0.5 + level * 0.37 + idleMotion * 0.18,
-                transform: [{ scale: 0.9 + level * 0.2 + idleMotion * 0.05 }],
+                opacity: disabled ? 0.55 : 1,
+                transform: [
+                  {
+                    scale: (1 + level * 0.075) * (pressed && motion.pressFeedback ? 0.96 : 1),
+                  },
+                ],
               },
             ]}
-          />
-          <View style={[styles.coreInner, { backgroundColor: `${meta.color}14` }]}>
-            <Icon source={meta.icon} size={state === 'recording' ? 39 : 47} color={meta.color} />
-            {durationText ? <Text style={[styles.duration, { color: meta.color }]}>{durationText}</Text> : null}
-            {state === 'recording' ? <View style={styles.miniWave}>{amplitudeBars}</View> : null}
-          </View>
-        </View>
-      </Pressable>
+          >
+            <View style={[styles.core, { borderColor: `${meta.color}C7` }]}>
+              <View
+                style={[
+                  styles.coreGlow,
+                  {
+                    backgroundColor: `${meta.color}16`,
+                    opacity: 0.55 + level * 0.37,
+                    transform: [{ scale: 0.9 + level * 0.2 }],
+                  },
+                ]}
+              />
+              <View style={[styles.coreInner, { backgroundColor: `${meta.color}14` }]}>
+                <Icon source={meta.icon} size={state === 'recording' ? 39 : 47} color={meta.color} />
+                {durationText ? <Text style={[styles.duration, { color: meta.color }]}>{durationText}</Text> : null}
+                {state === 'recording' ? <View style={styles.miniWave}>{amplitudeBars}</View> : null}
+              </View>
+            </View>
+          </Pressable>
+        </Animated.View>
+      </View>
 
       <Text style={[styles.label, { color: state === 'error' ? techTokens.colors.error : techTokens.colors.text }]}>
         {meta.label}
@@ -150,15 +191,28 @@ export function TechVoiceOrb({
   );
 }
 
+const STAGE_SIZE = 276;
+
 const styles = StyleSheet.create({
   root: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 336,
+    minHeight: 356,
   },
-  pressLayer: {
-    zIndex: 6,
+  stage: {
+    width: STAGE_SIZE,
+    height: STAGE_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  corePosition: {
+    position: 'absolute',
+    left: (STAGE_SIZE - 160) / 2,
+    top: (STAGE_SIZE - 160) / 2,
+    width: 160,
+    height: 160,
+  },
+  pressLayer: { width: 160, height: 160 },
   core: {
     width: 160,
     height: 160,
@@ -186,7 +240,8 @@ const styles = StyleSheet.create({
   },
   orbitOuter: {
     position: 'absolute',
-    top: 42,
+    left: (STAGE_SIZE - 236) / 2,
+    top: (STAGE_SIZE - 236) / 2,
     width: 236,
     height: 236,
     borderRadius: 118,
@@ -195,7 +250,8 @@ const styles = StyleSheet.create({
   },
   orbitInner: {
     position: 'absolute',
-    top: 61,
+    left: (STAGE_SIZE - 198) / 2,
+    top: (STAGE_SIZE - 198) / 2,
     width: 198,
     height: 198,
     borderRadius: 99,
@@ -218,7 +274,8 @@ const styles = StyleSheet.create({
   nodeThree: { right: 1, top: 92 },
   ringPulse: {
     position: 'absolute',
-    top: 52,
+    left: (STAGE_SIZE - 216) / 2,
+    top: (STAGE_SIZE - 216) / 2,
     width: 216,
     height: 216,
     borderRadius: 108,
@@ -226,15 +283,17 @@ const styles = StyleSheet.create({
   },
   crossHairHorizontal: {
     position: 'absolute',
-    top: 158,
-    width: 266,
+    left: 5,
+    top: STAGE_SIZE / 2,
+    width: STAGE_SIZE - 10,
     height: StyleSheet.hairlineWidth,
   },
   crossHairVertical: {
     position: 'absolute',
-    top: 28,
+    left: STAGE_SIZE / 2,
+    top: 5,
     width: StyleSheet.hairlineWidth,
-    height: 260,
+    height: STAGE_SIZE - 10,
   },
   duration: {
     marginTop: 5,
@@ -249,12 +308,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
-  miniBar: {
-    width: 2,
-    borderRadius: 1,
-  },
+  miniBar: { width: 2, borderRadius: 1 },
   label: {
-    marginTop: 27,
+    marginTop: 1,
     fontSize: 17,
     fontWeight: '800',
     letterSpacing: 0.2,
