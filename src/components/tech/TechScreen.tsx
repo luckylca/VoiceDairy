@@ -1,10 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  StyleSheet,
-  View,
-  useWindowDimensions,
-  type ViewStyle,
-} from 'react-native';
+import { StyleSheet, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import { techTokens } from '../../theme/tech/tokens';
 import { useVisualStyle } from '../../theme/VisualStyleProvider';
 import { useMainTabActive } from '../../navigation/MainTabActivityContext';
@@ -13,6 +8,7 @@ import {
   subscribeAsrActivity,
   type AsrActivity,
 } from '../../services/asr/AsrService';
+import { useTechMotionPhase } from './TechMotionClock';
 
 type TechScreenProps = {
   children: React.ReactNode;
@@ -27,35 +23,37 @@ type Particle = {
   opacity: number;
 };
 
-/**
- * Static technology background.
- *
- * Native Animated loops were previously restarted whenever tabs, ASR state or
- * motion settings changed. On Android that could leave hundreds of pending
- * NativeAnimated callbacks. This version keeps the visual language while doing
- * no continuous bridge-driven animation.
- */
 export function TechScreen({ children, style, ambient = true }: TechScreenProps) {
   const { width, height } = useWindowDimensions();
-  const { motion } = useVisualStyle();
+  const { motion, motionLevel } = useVisualStyle();
   const tabActive = useMainTabActive();
   const [asrActivity, setAsrActivity] = useState<AsrActivity>(getAsrActivity());
 
-  const showDecorative = ambient && tabActive && asrActivity === 'idle' && motion.decorative;
-  const staticParticleCount = showDecorative ? Math.min(motion.particleCount, 6) : 0;
+  useEffect(() => subscribeAsrActivity(setAsrActivity), []);
+
+  const effectsAllowed = tabActive && asrActivity === 'idle';
+  const runAmbient = ambient && effectsAllowed && motion.ambient;
+  const showDecorative = effectsAllowed && motion.decorative;
+  const fps = motionLevel === 'full' ? 24 : 14;
+  const periodMs = Math.max(5200, Math.round(9000 * Math.max(0.65, motion.durationScale)));
+  const phase = useTechMotionPhase(runAmbient, fps, periodMs);
+
+  const wave = (Math.sin(phase * Math.PI * 2) + 1) / 2;
+  const reverseWave = 1 - wave;
+  const scanProgress = (phase * 1.65) % 1;
+  const rotation = `${-12 + phase * 40}deg`;
+  const reverseRotation = `${18 - phase * 38}deg`;
 
   const particles = useMemo<Particle[]>(
     () =>
-      Array.from({ length: staticParticleCount }, (_, index) => ({
+      Array.from({ length: showDecorative ? motion.particleCount : 0 }, (_, index) => ({
         left: (((index * 73 + 19) % 97) / 100) * width,
         top: (((index * 47 + 13) % 101) / 100) * height,
         size: 1.4 + (index % 3) * 0.8,
-        opacity: 0.24 + (index % 4) * 0.09,
+        opacity: 0.22 + (index % 4) * 0.11,
       })),
-    [height, staticParticleCount, width],
+    [height, motion.particleCount, showDecorative, width],
   );
-
-  useEffect(() => subscribeAsrActivity(setAsrActivity), []);
 
   return (
     <View style={[styles.root, style]}>
@@ -69,39 +67,89 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
           ))}
         </View>
 
-        <View style={styles.glowPrimary} />
-        <View style={styles.glowSecondary} />
+        <View
+          style={[
+            styles.glowPrimary,
+            {
+              opacity: runAmbient ? 0.2 + wave * 0.24 : 0.15,
+              transform: [
+                { translateX: runAmbient ? -20 + wave * 38 : 0 },
+                { translateY: runAmbient ? 10 - wave * 26 : 0 },
+                { scale: runAmbient ? 0.92 + wave * 0.13 : 0.96 },
+              ],
+            },
+          ]}
+        />
+        <View
+          style={[
+            styles.glowSecondary,
+            {
+              opacity: runAmbient ? 0.1 + reverseWave * 0.17 : 0.09,
+              transform: [{ scale: runAmbient ? 0.93 + reverseWave * 0.1 : 0.96 }],
+            },
+          ]}
+        />
 
         {showDecorative ? (
           <>
-            <View style={styles.orbitLarge}>
+            <View style={[styles.orbitLarge, { transform: [{ rotate: rotation }] }]}>
               <View style={styles.orbitNodePrimary} />
               <View style={styles.orbitNodeSecondary} />
             </View>
-            <View style={styles.orbitSmall}>
+            <View style={[styles.orbitSmall, { transform: [{ rotate: reverseRotation }] }]}>
               <View style={styles.orbitNodeSmall} />
             </View>
           </>
         ) : null}
 
-        {particles.map((particle, index) => (
+        {particles.length > 0 ? (
           <View
-            key={`particle-${index}`}
             style={[
-              styles.particle,
+              StyleSheet.absoluteFill,
               {
-                left: particle.left,
-                top: particle.top,
-                width: particle.size,
-                height: particle.size,
-                borderRadius: particle.size,
-                opacity: particle.opacity,
+                opacity: runAmbient ? 0.72 + wave * 0.28 : 0.7,
+                transform: [
+                  { translateY: runAmbient ? 8 - phase * 20 : 0 },
+                  { translateX: runAmbient ? -4 + wave * 10 : 0 },
+                ],
+              },
+            ]}
+          >
+            {particles.map((particle, index) => (
+              <View
+                key={`particle-${index}`}
+                style={[
+                  styles.particle,
+                  {
+                    left: particle.left,
+                    top: particle.top,
+                    width: particle.size,
+                    height: particle.size,
+                    borderRadius: particle.size,
+                    opacity: particle.opacity,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        ) : null}
+
+        {showDecorative && motion.particleCount > 4 ? (
+          <View
+            style={[
+              styles.scanBeam,
+              {
+                opacity: runAmbient
+                  ? scanProgress < 0.08
+                    ? (scanProgress / 0.08) * 0.36
+                    : (1 - scanProgress) * 0.22
+                  : 0,
+                transform: [{ translateY: -60 + scanProgress * (height + 120) }],
               },
             ]}
           />
-        ))}
+        ) : null}
 
-        {showDecorative && motion.particleCount > 4 ? <View style={styles.scanBeam} /> : null}
         <View style={styles.vignetteTop} />
         <View style={styles.vignetteBottom} />
       </View>
@@ -118,7 +166,7 @@ const styles = StyleSheet.create({
   },
   gridLayer: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.2,
+    opacity: 0.22,
   },
   gridHorizontal: {
     position: 'absolute',
@@ -136,23 +184,21 @@ const styles = StyleSheet.create({
   },
   glowPrimary: {
     position: 'absolute',
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    top: -105,
-    right: -130,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    top: -110,
+    right: -135,
     backgroundColor: techTokens.colors.glow,
-    opacity: 0.22,
   },
   glowSecondary: {
     position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    left: -140,
-    bottom: -112,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    left: -150,
+    bottom: -120,
     backgroundColor: techTokens.colors.glowSecondary,
-    opacity: 0.14,
   },
   orbitLarge: {
     position: 'absolute',
@@ -163,7 +209,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(85,217,255,0.08)',
     right: -170,
     top: 60,
-    transform: [{ rotate: '18deg' }],
   },
   orbitSmall: {
     position: 'absolute',
@@ -174,7 +219,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(142,124,255,0.10)',
     left: -110,
     top: '43%',
-    transform: [{ rotate: '-14deg' }],
   },
   orbitNodePrimary: {
     position: 'absolute',
@@ -211,12 +255,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: -20,
     right: -20,
-    top: '32%',
-    height: 42,
+    top: 0,
+    height: 48,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(116,229,255,0.22)',
-    backgroundColor: 'rgba(85,217,255,0.012)',
-    transform: [{ rotate: '-3deg' }],
+    borderTopColor: 'rgba(116,229,255,0.38)',
+    backgroundColor: 'rgba(85,217,255,0.018)',
   },
   vignetteTop: {
     position: 'absolute',
