@@ -1,18 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
   AppSettings,
+  CloudModelProvider,
   MotionLevel,
   StartupPage,
   VisualStyle,
 } from '../../types/settings';
 import { DEFAULT_SYSTEM_PROMPT } from '../llm/PromptBuilder';
+import { inferCloudModelProvider } from '../llm/CloudModelProviders';
 
-// Keep the original key so upgrades continue to read existing user data.
 const SETTINGS_KEY = 'voicedairy.settings.v1';
 const LEGACY_DEFAULT_CATEGORY_SIGNATURE = 'idea、todo、reminder、note、journal、question、project、unknown';
 const listeners = new Set<(settings: AppSettings) => void>();
 
 export const defaultSettings: AppSettings = {
+  cloudModelProvider: 'openai',
   apiBaseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   modelName: 'gpt-4o-mini',
@@ -42,11 +44,25 @@ function normalizeStartupPage(value: unknown): StartupPage {
   return value === 'last_page' || value === 'agent' ? value : 'quick_record';
 }
 
+function normalizeCloudModelProvider(value: unknown, baseUrl: string): CloudModelProvider {
+  const allowed: CloudModelProvider[] = [
+    'openai',
+    'deepseek',
+    'anthropic',
+    'minimax',
+    'zhipu',
+    'moonshot',
+    'aliyun',
+    'custom',
+  ];
+  return allowed.includes(value as CloudModelProvider)
+    ? (value as CloudModelProvider)
+    : inferCloudModelProvider(baseUrl);
+}
+
 export async function loadSettings(): Promise<AppSettings> {
   const raw = await AsyncStorage.getItem(SETTINGS_KEY);
-  if (!raw) {
-    return defaultSettings;
-  }
+  if (!raw) return defaultSettings;
 
   try {
     const saved = JSON.parse(raw) as Partial<AppSettings>;
@@ -55,10 +71,13 @@ export async function loadSettings(): Promise<AppSettings> {
       saved.systemPrompt.includes(LEGACY_DEFAULT_CATEGORY_SIGNATURE)
         ? DEFAULT_SYSTEM_PROMPT
         : saved.systemPrompt;
+    const apiBaseUrl = typeof saved.apiBaseUrl === 'string' ? saved.apiBaseUrl : defaultSettings.apiBaseUrl;
 
     return {
       ...defaultSettings,
       ...saved,
+      cloudModelProvider: normalizeCloudModelProvider(saved.cloudModelProvider, apiBaseUrl),
+      apiBaseUrl,
       organizerProvider: saved.organizerProvider === 'local' ? 'local' : 'cloud',
       localModelContextSize:
         typeof saved.localModelContextSize === 'number' && saved.localModelContextSize >= 1024
