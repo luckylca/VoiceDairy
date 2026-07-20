@@ -46,15 +46,19 @@ export function TechVoiceOrb({
   const amplitudeValue = useRef(new Animated.Value(0)).current;
   const stateKick = useRef(new Animated.Value(1)).current;
   const meta = stateMeta[state];
-  const shouldAnimate = tabActive && motion.ambient && state !== 'success' && state !== 'error';
+
+  // During recording and inference, PCM/state feedback is already visible. Keep
+  // the continuous orbit only in idle state so audio work gets the frame budget.
+  const shouldAnimate = tabActive && motion.ambient && state === 'idle';
 
   useEffect(() => {
     amplitudeValue.stopAnimation();
     Animated.timing(amplitudeValue, {
       toValue: state === 'recording' ? Math.max(0, Math.min(1, amplitude)) : 0,
-      duration: 90,
+      duration: 85,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
+      isInteraction: false,
     }).start();
   }, [amplitude, amplitudeValue, state]);
 
@@ -66,6 +70,7 @@ export function TechVoiceOrb({
       speed: 28,
       bounciness: state === 'success' ? 8 : 3,
       useNativeDriver: true,
+      isInteraction: false,
     }).start();
   }, [state, stateKick]);
 
@@ -74,18 +79,18 @@ export function TechVoiceOrb({
     cycle.setValue(0);
     if (!shouldAnimate) return;
 
-    const duration = state === 'recording' ? 5200 : state === 'idle' ? 9000 : 6800;
     const loop = Animated.loop(
       Animated.timing(cycle, {
         toValue: 1,
-        duration: Math.max(2400, Math.round(duration * motion.durationScale)),
+        duration: Math.max(3600, Math.round(9000 * motion.durationScale)),
         easing: Easing.linear,
         useNativeDriver: true,
+        isInteraction: false,
       }),
     );
     loop.start();
     return () => loop.stop();
-  }, [cycle, motion.durationScale, shouldAnimate, state]);
+  }, [cycle, motion.durationScale, shouldAnimate]);
 
   const pulse = cycle.interpolate({
     inputRange: [0, 0.5, 1],
@@ -101,12 +106,12 @@ export function TechVoiceOrb({
         Animated.add(
           1,
           Animated.add(
-            pulse.interpolate({ inputRange: [0, 1], outputRange: [0, state === 'recording' ? 0.025 : 0.012] }),
+            pulse.interpolate({ inputRange: [0, 1], outputRange: [0, 0.012] }),
             amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0, 0.11] }),
           ),
         ),
       ),
-    [amplitudeValue, pulse, state, stateKick],
+    [amplitudeValue, pulse, stateKick],
   );
 
   function animatePress(toValue: number) {
@@ -114,8 +119,9 @@ export function TechVoiceOrb({
     pressScale.stopAnimation();
     Animated.timing(pressScale, {
       toValue,
-      duration: 70,
+      duration: 65,
       useNativeDriver: true,
+      isInteraction: false,
     }).start();
   }
 
@@ -151,7 +157,7 @@ export function TechVoiceOrb({
                 scale: Animated.add(
                   1,
                   Animated.add(
-                    pulse.interpolate({ inputRange: [0, 1], outputRange: [0, 0.22] }),
+                    shouldAnimate ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0, 0.22] }) : 0,
                     amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0, 0.16] }),
                   ),
                 ),
