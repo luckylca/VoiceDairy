@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Animated,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -31,11 +30,12 @@ import { consumeAgentDraft, subscribeAgentDraft } from '../services/agent/AgentD
 import { createId } from '../utils/id';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 import { useVisualStyle } from '../theme/VisualStyleProvider';
+import { useMainTabActive } from '../navigation/MainTabActivityContext';
 import { TechScreen } from '../components/tech/TechScreen';
 import { TechPanel } from '../components/tech/TechPanel';
 import { TechButton } from '../components/tech/TechButton';
 import { TechAgentCore } from '../components/tech/TechAgentCore';
-import { TechCornerBrackets, TechEntrance, TechShimmer } from '../components/tech/TechMotion';
+import { TechCornerBrackets, TechEntrance } from '../components/tech/TechMotion';
 import { techTokens } from '../theme/tech/tokens';
 
 function actionTypeLabel(action: AgentAction): string {
@@ -51,23 +51,23 @@ function actionTypeLabel(action: AgentAction): string {
 }
 
 function actionStatusLabel(action: AgentAction): string {
-  return action.status === 'pending'
-    ? '待确认'
-    : action.status === 'executing'
-      ? '执行中'
-      : action.status === 'success'
-        ? '执行成功'
-        : action.status === 'failed'
-          ? '执行失败'
-          : '已取消';
+  if (action.status === 'pending') return '待确认';
+  if (action.status === 'executing') return '执行中';
+  if (action.status === 'success') return '执行成功';
+  if (action.status === 'failed') return '执行失败';
+  return '已取消';
+}
+
+function readableMessage(value: unknown, fallback: string): string {
+  return value instanceof Error ? value.message : fallback;
 }
 
 export function AgentScreen() {
   const theme = useTheme();
   const { isTech, motion } = useVisualStyle();
+  const tabActive = useMainTabActive();
   const { showNotification } = useFluidNotification();
   const listRef = useRef<FlatList<AgentMessage>>(null);
-  const inputPulse = useRef(new Animated.Value(0)).current;
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [input, setInput] = useState('');
@@ -137,21 +137,13 @@ export function AgentScreen() {
   }, [importDraft]);
 
   useEffect(() => {
+    if (!recording || !tabActive) return;
     return subscribeAsrAmplitude(event => {
       const value = Math.max(0, Math.min(1, event.amplitude));
       setAmplitude(value);
       setVoiceLevels(current => [...current.slice(-11), value]);
-      if (motion.decorative) {
-        inputPulse.stopAnimation();
-        Animated.spring(inputPulse, {
-          toValue: value,
-          speed: 45,
-          bounciness: 1,
-          useNativeDriver: true,
-        }).start();
-      }
     });
-  }, [inputPulse, motion.decorative]);
+  }, [recording, tabActive]);
 
   useEffect(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: motion.entrances }));
@@ -194,12 +186,12 @@ export function AgentScreen() {
         icon: 'text-box-check-outline',
       });
       if (settings.agentAutoSendVoice) await handleSend(result.text, 'voice');
-    } catch (error) {
+    } catch (caughtError) {
       setRecording(false);
       setAmplitude(0);
       showNotification({
         title: 'Agent 语音输入失败',
-        message: error instanceof Error ? error.message : '请检查麦克风权限和本地识别模型。',
+        message: readableMessage(caughtError, '请检查麦克风权限和本地识别模型。'),
         kind: 'error',
       });
     }
@@ -242,17 +234,15 @@ export function AgentScreen() {
       };
       setPendingClarification(parsed.clarificationQuestion ? requestText : null);
       replaceMessages(current => [...current, assistantMessage]);
-    } catch (error) {
-      replaceMessages(current => [
-        ...current,
-        {
-          id: createId('agent_message'),
-          role: 'assistant',
-          content: `处理失败：${error instanceof Error ? error.message : '请检查模型设置后重试。'}`,
-          createdAt: new Date().toISOString(),
-          responseState: 'reply_only',
-        },
-      ]);
+    } catch (caughtError) {
+      const failureMessage: AgentMessage = {
+        id: createId('agent_message'),
+        role: 'assistant',
+        content: `处理失败：${readableMessage(caughtError, '请检查模型设置后重试。')}`,
+        createdAt: new Date().toISOString(),
+        responseState: 'reply_only',
+      };
+      replaceMessages(current => [...current, failureMessage]);
     } finally {
       setSending(false);
     }
@@ -307,8 +297,8 @@ export function AgentScreen() {
     setPendingClarification(null);
   }
 
-  const renderActionCard = (messageId: string, action: AgentAction, index: number) => {
-    const result = messages
+  function renderActionCard(messageId: string, action: AgentAction, index: number) {
+    const executionResult = messages
       .find(message => message.id === messageId)
       ?.executionResults?.find(item => item.actionId === action.id);
     const executing = action.status === 'executing';
@@ -319,17 +309,8 @@ export function AgentScreen() {
       return (
         <TechPanel key={action.id} index={index + 1} accent style={{ marginTop: 10 }}>
           <View style={styles.actionHeader}>
-            <View style={styles.actionTypeRow}>
-              <View style={styles.actionDataDot} />
-              <Text style={styles.techActionType}>{actionTypeLabel(action).toUpperCase()}</Text>
-            </View>
-            <Text
-              style={[
-                styles.techActionStatus,
-                completed && { color: techTokens.colors.success },
-                action.status === 'failed' && { color: techTokens.colors.error },
-              ]}
-            >
+            <Text style={styles.techActionType}>{actionTypeLabel(action).toUpperCase()}</Text>
+            <Text style={[styles.techActionStatus, completed && { color: techTokens.colors.success }]}>
               {actionStatusLabel(action)}
             </Text>
           </View>
@@ -345,9 +326,9 @@ export function AgentScreen() {
               <View style={[styles.confidenceFill, { width: `${Math.round(action.confidence * 100)}%` }]} />
             </View>
           </View>
-          {result ? (
-            <Text style={[styles.techResult, { color: result.success ? techTokens.colors.success : techTokens.colors.error }]}>
-              {result.message}
+          {executionResult ? (
+            <Text style={[styles.techResult, { color: executionResult.success ? techTokens.colors.success : techTokens.colors.error }]}>
+              {executionResult.message}
             </Text>
           ) : null}
           {!completed && !cancelled ? (
@@ -381,9 +362,7 @@ export function AgentScreen() {
         </View>
         <Text variant="titleMedium" style={{ marginTop: 8, fontWeight: '900' }}>{action.title}</Text>
         <Text variant="bodyMedium" style={{ marginTop: 5, color: theme.colors.onSurfaceVariant }}>{action.description}</Text>
-        {action.projectName ? <Text variant="bodySmall" style={{ marginTop: 7 }}>项目：{action.projectName}</Text> : null}
-        {action.datetime || action.dueDate ? <Text variant="bodySmall" style={{ marginTop: 5, color: theme.colors.tertiary }}>时间：{action.datetime ?? action.dueDate}</Text> : null}
-        {result ? <Text variant="bodySmall" style={{ marginTop: 8, color: result.success ? theme.colors.primary : theme.colors.error }}>{result.message}</Text> : null}
+        {executionResult ? <Text variant="bodySmall" style={{ marginTop: 8, color: executionResult.success ? theme.colors.primary : theme.colors.error }}>{executionResult.message}</Text> : null}
         {!completed && !cancelled ? (
           <View style={styles.actionButtons}>
             <Button mode="contained" loading={executing} disabled={executing} onPress={() => void confirmAction(messageId, action)} style={{ flex: 1 }}>确认</Button>
@@ -392,122 +371,7 @@ export function AgentScreen() {
         ) : null}
       </View>
     );
-  };
-
-  const messageList = (
-    <FlatList
-      ref={listRef}
-      data={messages}
-      keyExtractor={item => item.id}
-      contentContainerStyle={styles.listContent}
-      showsVerticalScrollIndicator={false}
-      ListEmptyComponent={
-        isTech ? (
-          <TechEntrance from="scale">
-            <View style={styles.emptyState}>
-              <TechAgentCore active={false} label="AGENT READY" />
-              <Text style={styles.techEmptyTitle}>VoiceDiary Agent</Text>
-              <Text style={styles.techEmptyBody}>
-                描述想法、待办、提醒或项目进展。系统会先生成结构化操作，只有你确认后才写入数据。
-              </Text>
-              <View style={styles.capabilityRow}>
-                {['CONTEXT', 'VOICE', 'ACTIONS'].map(label => (
-                  <View key={label} style={styles.capabilityChip}><Text style={styles.capabilityText}>{label}</Text></View>
-                ))}
-              </View>
-            </View>
-          </TechEntrance>
-        ) : (
-          <View style={styles.emptyState}>
-            <View style={[styles.emptyIcon, { backgroundColor: theme.colors.primaryContainer }]}>
-              <Icon source="message-processing-outline" size={34} color={theme.colors.onPrimaryContainer} />
-            </View>
-            <Text variant="titleLarge" style={{ marginTop: 16, fontWeight: '900' }}>和 VoiceDiary Agent 对话</Text>
-            <Text variant="bodyMedium" style={{ marginTop: 8, textAlign: 'center', lineHeight: 22, color: theme.colors.onSurfaceVariant }}>
-              描述想法、待办、提醒或项目进展。Agent 会先生成操作卡片，只有你确认后才会修改数据。
-            </Text>
-          </View>
-        )
-      }
-      renderItem={({ item, index }) => {
-        const isUser = item.role === 'user';
-        const bubble = (
-          <View style={{ marginTop: 12 }}>
-            <View style={[styles.messageRow, { justifyContent: isUser ? 'flex-end' : 'flex-start' }]}>
-              <View
-                style={[
-                  styles.bubble,
-                  isTech && styles.techBubble,
-                  {
-                    backgroundColor: isTech
-                      ? isUser
-                        ? 'rgba(85,217,255,0.13)'
-                        : 'rgba(13,32,44,0.90)'
-                      : isUser
-                        ? theme.colors.primaryContainer
-                        : theme.colors.surface,
-                    borderColor: isTech
-                      ? isUser
-                        ? 'rgba(85,217,255,0.45)'
-                        : techTokens.colors.line
-                      : theme.colors.outlineVariant,
-                  },
-                ]}
-              >
-                {isTech ? (
-                  <>
-                    <TechCornerBrackets color={isUser ? techTokens.colors.primary : 'rgba(142,124,255,0.62)'} />
-                    <TechShimmer duration={2100 + (index % 3) * 400} />
-                    <View style={styles.messageMetaRow}>
-                      <Text style={[styles.roleCode, { color: isUser ? techTokens.colors.primary : techTokens.colors.secondary }]}>
-                        {isUser ? 'USER.INPUT' : 'AGENT.OUTPUT'}
-                      </Text>
-                      <View style={[styles.roleDot, { backgroundColor: isUser ? techTokens.colors.success : techTokens.colors.secondary }]} />
-                    </View>
-                  </>
-                ) : null}
-                <Text style={{ color: isTech ? techTokens.colors.text : theme.colors.onSurface, lineHeight: 22, zIndex: 2 }}>{item.content}</Text>
-                <Text variant="labelSmall" style={{ marginTop: 7, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant, zIndex: 2 }}>
-                  {new Date(item.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                  {item.source === 'voice' ? ' · VOICE' : ''}
-                </Text>
-              </View>
-            </View>
-            {item.actions?.map((action, actionIndex) => renderActionCard(item.id, action, actionIndex))}
-          </View>
-        );
-
-        return isTech ? (
-          <TechEntrance index={Math.min(index, 8)} from={isUser ? 'right' : 'left'}>{bubble}</TechEntrance>
-        ) : bubble;
-      }}
-      ListFooterComponent={
-        sending ? (
-          isTech ? (
-            <TechEntrance index={1}>
-              <View style={styles.techThinkingRow}>
-                <TechAgentCore active compact />
-                <View style={styles.thinkingTextArea}>
-                  <Text style={styles.thinkingTitle}>正在重组上下文</Text>
-                  <Text style={styles.thinkingSubtitle}>READING · VALIDATING · SYNTHESIZING</Text>
-                  <View style={styles.thinkingBars}>
-                    {[0.45, 0.72, 0.92, 0.6, 0.8].map((width, index) => (
-                      <View key={index} style={[styles.thinkingBar, { width: `${width * 100}%`, opacity: 0.35 + index * 0.11 }]} />
-                    ))}
-                  </View>
-                </View>
-              </View>
-            </TechEntrance>
-          ) : (
-            <View style={styles.thinkingRow}>
-              <ActivityIndicator size={18} />
-              <Text style={{ marginLeft: 9, color: theme.colors.onSurfaceVariant }}>正在理解内容并生成待确认操作…</Text>
-            </View>
-          )
-        ) : null
-      }
-    />
-  );
+  }
 
   const voiceBars = Array.from({ length: 12 }, (_, index) => {
     const source = voiceLevels[voiceLevels.length - 12 + index] ?? 0.03;
@@ -527,21 +391,16 @@ export function AgentScreen() {
 
   const inputBar = isTech ? (
     <View style={styles.techInputBar}>
-      <Animated.View
-        style={{
-          transform: [
-            { scale: recording ? inputPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] }) : 1 },
-          ],
-        }}
+      <Pressable
+        onPress={() => void handleVoiceInput()}
+        style={({ pressed }) => [
+          styles.voiceButton,
+          recording && styles.voiceButtonRecording,
+          pressed && { opacity: 0.72, transform: [{ scale: 0.96 }] },
+        ]}
       >
-        <Pressable
-          onPress={() => void handleVoiceInput()}
-          style={[styles.voiceButton, recording && styles.voiceButtonRecording]}
-        >
-          <Icon source={recording ? 'stop' : 'microphone-outline'} size={23} color={recording ? techTokens.colors.error : techTokens.colors.primary} />
-        </Pressable>
-      </Animated.View>
-
+        <Icon source={recording ? 'stop' : 'microphone-outline'} size={23} color={recording ? techTokens.colors.error : techTokens.colors.primary} />
+      </Pressable>
       <View style={styles.inputModule}>
         {recording ? (
           <View style={styles.inputWave}>
@@ -560,11 +419,10 @@ export function AgentScreen() {
           />
         )}
       </View>
-
       <Pressable
         disabled={sending || recording || !input.trim()}
         onPress={() => void handleSend()}
-        style={[styles.sendButton, (!input.trim() || sending || recording) && { opacity: 0.35 }]}
+        style={({ pressed }) => [styles.sendButton, (!input.trim() || sending || recording) && { opacity: 0.35 }, pressed && { transform: [{ scale: 0.95 }] }]}
       >
         <TechCornerBrackets color="rgba(3,8,13,0.45)" />
         <Icon source="send" size={22} color={techTokens.colors.backgroundDeep} />
@@ -588,6 +446,67 @@ export function AgentScreen() {
     </View>
   );
 
+  const messageList = (
+    <FlatList
+      ref={listRef}
+      data={messages}
+      keyExtractor={item => item.id}
+      contentContainerStyle={styles.listContent}
+      showsVerticalScrollIndicator={false}
+      ListEmptyComponent={
+        <View style={styles.emptyState}>
+          {isTech ? <TechAgentCore active={false} label="AGENT READY" /> : <Icon source="message-processing-outline" size={44} color={theme.colors.primary} />}
+          <Text style={[styles.emptyTitle, { color: isTech ? techTokens.colors.text : theme.colors.onSurface }]}>VoiceDiary Agent</Text>
+          <Text style={[styles.emptyBody, { color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }]}>
+            描述想法、待办、提醒或项目进展。系统会先生成结构化操作，只有你确认后才写入数据。
+          </Text>
+        </View>
+      }
+      renderItem={({ item, index }) => {
+        const isUser = item.role === 'user';
+        const bubble = (
+          <View style={{ marginTop: 12 }}>
+            <View style={[styles.messageRow, { justifyContent: isUser ? 'flex-end' : 'flex-start' }]}>
+              <View
+                style={[
+                  styles.bubble,
+                  isTech && styles.techBubble,
+                  {
+                    backgroundColor: isTech
+                      ? isUser ? 'rgba(85,217,255,0.13)' : 'rgba(13,32,44,0.90)'
+                      : isUser ? theme.colors.primaryContainer : theme.colors.surface,
+                    borderColor: isTech
+                      ? isUser ? 'rgba(85,217,255,0.45)' : techTokens.colors.line
+                      : theme.colors.outlineVariant,
+                  },
+                ]}
+              >
+                {isTech ? <TechCornerBrackets color={isUser ? techTokens.colors.primary : techTokens.colors.secondary} /> : null}
+                <Text style={{ color: isTech ? techTokens.colors.text : theme.colors.onSurface, lineHeight: 22, zIndex: 2 }}>{item.content}</Text>
+                <Text variant="labelSmall" style={{ marginTop: 7, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant, zIndex: 2 }}>
+                  {new Date(item.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                  {item.source === 'voice' ? ' · VOICE' : ''}
+                </Text>
+              </View>
+            </View>
+            {item.actions?.map((action, actionIndex) => renderActionCard(item.id, action, actionIndex))}
+          </View>
+        );
+        return isTech ? <TechEntrance index={Math.min(index, 8)} from={isUser ? 'right' : 'left'}>{bubble}</TechEntrance> : bubble;
+      }}
+      ListFooterComponent={
+        sending ? (
+          <View style={isTech ? styles.techThinkingRow : styles.thinkingRow}>
+            {isTech ? <TechAgentCore active compact /> : <ActivityIndicator size={18} />}
+            <Text style={{ marginLeft: 9, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
+              正在理解内容并生成待确认操作…
+            </Text>
+          </View>
+        ) : null
+      }
+    />
+  );
+
   const content = (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.header, { borderBottomColor: isTech ? techTokens.colors.line : theme.colors.outlineVariant }]}>
@@ -605,308 +524,43 @@ export function AgentScreen() {
     </KeyboardAvoidingView>
   );
 
-  return isTech ? <TechScreen ambient>{content}</TechScreen> : <View style={{ flex: 1, backgroundColor: theme.colors.background }}>{content}</View>;
+  return isTech
+    ? <TechScreen ambient>{content}</TechScreen>
+    : <View style={{ flex: 1, backgroundColor: theme.colors.background }}>{content}</View>;
 }
 
 const styles = StyleSheet.create({
-  header: {
-    minHeight: 78,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-    flexGrow: 1,
-  },
-  emptyState: {
-    flex: 1,
-    minHeight: 420,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 30,
-  },
-  emptyIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  techEmptyTitle: {
-    marginTop: 16,
-    color: techTokens.colors.text,
-    fontSize: 22,
-    fontWeight: '900',
-  },
-  techEmptyBody: {
-    marginTop: 9,
-    color: techTokens.colors.textMuted,
-    textAlign: 'center',
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  capabilityRow: {
-    marginTop: 17,
-    flexDirection: 'row',
-    gap: 7,
-  },
-  capabilityChip: {
-    minHeight: 26,
-    paddingHorizontal: 9,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: techTokens.colors.line,
-    backgroundColor: 'rgba(85,217,255,0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  capabilityText: {
-    color: techTokens.colors.primary,
-    fontSize: 7,
-    fontWeight: '900',
-    letterSpacing: 0.75,
-  },
-  messageRow: {
-    width: '100%',
-    flexDirection: 'row',
-  },
-  bubble: {
-    maxWidth: '88%',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 19,
-    borderWidth: 1,
-  },
-  techBubble: {
-    overflow: 'hidden',
-  },
-  messageMetaRow: {
-    zIndex: 2,
-    marginBottom: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  roleCode: {
-    fontSize: 7,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  roleDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
-  actionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  actionTypeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  actionDataDot: {
-    width: 5,
-    height: 5,
-    marginRight: 7,
-    borderRadius: 3,
-    backgroundColor: techTokens.colors.primary,
-  },
-  classicActionCard: {
-    marginTop: 10,
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 15,
-  },
-  actionButtons: {
-    marginTop: 14,
-    flexDirection: 'row',
-    gap: 10,
-  },
-  techActionType: {
-    color: techTokens.colors.primary,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  techActionStatus: {
-    color: techTokens.colors.warning,
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  techActionTitle: {
-    marginTop: 9,
-    color: techTokens.colors.text,
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  techActionDescription: {
-    marginTop: 6,
-    color: techTokens.colors.textMuted,
-    lineHeight: 21,
-  },
-  techActionMeta: {
-    marginTop: 7,
-    color: techTokens.colors.textMuted,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  confidenceRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  confidenceText: {
-    color: 'rgba(143,168,181,0.55)',
-    fontSize: 7,
-    fontWeight: '900',
-    letterSpacing: 0.55,
-  },
-  confidenceTrack: {
-    flex: 1,
-    height: 2,
-    marginLeft: 9,
-    borderRadius: 1,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(143,168,181,0.12)',
-  },
-  confidenceFill: {
-    height: '100%',
-    borderRadius: 1,
-    backgroundColor: techTokens.colors.primary,
-  },
-  techResult: {
-    marginTop: 9,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  thinkingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  techThinkingRow: {
-    minHeight: 90,
-    marginTop: 12,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: techTokens.colors.line,
-    backgroundColor: 'rgba(7,23,32,0.80)',
-    paddingHorizontal: 13,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  thinkingTextArea: {
-    flex: 1,
-    marginLeft: 7,
-  },
-  thinkingTitle: {
-    color: techTokens.colors.text,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  thinkingSubtitle: {
-    marginTop: 4,
-    color: techTokens.colors.primary,
-    fontSize: 7,
-    fontWeight: '900',
-    letterSpacing: 0.75,
-  },
-  thinkingBars: {
-    marginTop: 9,
-    gap: 3,
-  },
-  thinkingBar: {
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: techTokens.colors.primary,
-  },
-  techInputBar: {
-    borderTopWidth: 1,
-    borderTopColor: techTokens.colors.line,
-    backgroundColor: 'rgba(3,11,17,0.98)',
-    paddingHorizontal: 10,
-    paddingTop: 9,
-    paddingBottom: 11,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  voiceButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: techTokens.colors.line,
-    backgroundColor: 'rgba(85,217,255,0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  voiceButtonRecording: {
-    borderColor: techTokens.colors.error,
-    backgroundColor: 'rgba(255,111,125,0.08)',
-  },
-  inputModule: {
-    flex: 1,
-    minHeight: 46,
-    maxHeight: 120,
-    marginHorizontal: 9,
-  },
-  techMessageInput: {
-    minHeight: 46,
-    maxHeight: 120,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: techTokens.colors.line,
-    backgroundColor: 'rgba(15,35,47,0.82)',
-    color: techTokens.colors.text,
-    fontSize: 15,
-  },
-  inputWave: {
-    height: 46,
-    paddingHorizontal: 11,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: techTokens.colors.line,
-    backgroundColor: 'rgba(15,35,47,0.82)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  inputVoiceBar: {
-    width: 3,
-    minHeight: 3,
-    borderRadius: 2,
-  },
-  inputLevel: {
-    marginLeft: 'auto',
-    color: techTokens.colors.primary,
-    fontSize: 9,
-    fontWeight: '900',
-    fontVariant: ['tabular-nums'],
-  },
-  sendButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
-    backgroundColor: techTokens.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  classicInputBar: {
-    borderTopWidth: 1,
-    paddingHorizontal: 10,
-    paddingTop: 9,
-    paddingBottom: 11,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
+  header: { minHeight: 78, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
+  listContent: { paddingHorizontal: 16, paddingBottom: 20, flexGrow: 1 },
+  emptyState: { flex: 1, minHeight: 420, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
+  emptyTitle: { marginTop: 16, fontSize: 22, fontWeight: '900' },
+  emptyBody: { marginTop: 9, textAlign: 'center', fontSize: 14, lineHeight: 22 },
+  messageRow: { width: '100%', flexDirection: 'row' },
+  bubble: { maxWidth: '88%', paddingHorizontal: 14, paddingVertical: 11, borderRadius: 19, borderWidth: 1 },
+  techBubble: { overflow: 'hidden' },
+  actionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  classicActionCard: { marginTop: 10, borderWidth: 1, borderRadius: 20, padding: 15 },
+  actionButtons: { marginTop: 14, flexDirection: 'row', gap: 10 },
+  techActionType: { color: techTokens.colors.primary, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  techActionStatus: { color: techTokens.colors.warning, fontSize: 10, fontWeight: '900' },
+  techActionTitle: { marginTop: 9, color: techTokens.colors.text, fontSize: 17, fontWeight: '900' },
+  techActionDescription: { marginTop: 6, color: techTokens.colors.textMuted, lineHeight: 21 },
+  techActionMeta: { marginTop: 7, color: techTokens.colors.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
+  confidenceRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center' },
+  confidenceText: { color: 'rgba(143,168,181,0.55)', fontSize: 7, fontWeight: '900', letterSpacing: 0.55 },
+  confidenceTrack: { flex: 1, height: 2, marginLeft: 9, borderRadius: 1, overflow: 'hidden', backgroundColor: 'rgba(143,168,181,0.12)' },
+  confidenceFill: { height: '100%', borderRadius: 1, backgroundColor: techTokens.colors.primary },
+  techResult: { marginTop: 9, fontSize: 13, lineHeight: 19 },
+  thinkingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16 },
+  techThinkingRow: { minHeight: 80, marginTop: 12, borderRadius: 18, borderWidth: 1, borderColor: techTokens.colors.line, backgroundColor: 'rgba(7,23,32,0.80)', paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center' },
+  techInputBar: { borderTopWidth: 1, borderTopColor: techTokens.colors.line, backgroundColor: 'rgba(3,11,17,0.98)', paddingHorizontal: 10, paddingTop: 9, paddingBottom: 11, flexDirection: 'row', alignItems: 'flex-end' },
+  voiceButton: { width: 46, height: 46, borderRadius: 15, borderWidth: 1, borderColor: techTokens.colors.line, backgroundColor: 'rgba(85,217,255,0.04)', alignItems: 'center', justifyContent: 'center' },
+  voiceButtonRecording: { borderColor: techTokens.colors.error, backgroundColor: 'rgba(255,111,125,0.08)' },
+  inputModule: { flex: 1, minHeight: 46, maxHeight: 120, marginHorizontal: 9 },
+  techMessageInput: { minHeight: 46, maxHeight: 120, paddingHorizontal: 13, paddingVertical: 11, borderRadius: 15, borderWidth: 1, borderColor: techTokens.colors.line, backgroundColor: 'rgba(15,35,47,0.82)', color: techTokens.colors.text, fontSize: 15 },
+  inputWave: { height: 46, paddingHorizontal: 11, borderRadius: 15, borderWidth: 1, borderColor: techTokens.colors.line, backgroundColor: 'rgba(15,35,47,0.82)', flexDirection: 'row', alignItems: 'center', gap: 3 },
+  inputVoiceBar: { width: 3, minHeight: 3, borderRadius: 2 },
+  inputLevel: { marginLeft: 'auto', color: techTokens.colors.primary, fontSize: 9, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  sendButton: { width: 46, height: 46, borderRadius: 15, backgroundColor: techTokens.colors.primary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  classicInputBar: { borderTopWidth: 1, paddingHorizontal: 10, paddingTop: 9, paddingBottom: 11, flexDirection: 'row', alignItems: 'flex-end' },
 });
