@@ -49,6 +49,7 @@ const ClassicTab = memo(function ClassicTab({
       toValue: focused ? 1 : 0,
       duration: 120,
       useNativeDriver: true,
+      isInteraction: false,
     }).start();
   }, [focused, progress]);
 
@@ -112,6 +113,7 @@ const TechTab = memo(function TechTab({
       toValue: focused ? 1 : 0,
       duration: Math.max(90, Math.round(150 * Math.max(0.5, motion.durationScale))),
       useNativeDriver: true,
+      isInteraction: false,
     }).start();
   }, [focus, focused, motion.durationScale, motion.entrances]);
 
@@ -122,6 +124,7 @@ const TechTab = memo(function TechTab({
       toValue: value,
       duration: 70,
       useNativeDriver: true,
+      isInteraction: false,
     }).start();
   }
 
@@ -193,6 +196,7 @@ export function BottomTabs() {
   const activeTrack = useRef(new Animated.Value(0)).current;
   const pageEntrance = useRef(new Animated.Value(1)).current;
   const [activeIndex, setActiveIndex] = useState(0);
+  const [mountedMask, setMountedMask] = useState(1);
   const [tabBarWidth, setTabBarWidth] = useState(0);
 
   const animateTrack = useCallback(
@@ -206,6 +210,7 @@ export function BottomTabs() {
         toValue: index,
         duration: Math.max(90, Math.round(150 * Math.max(0.55, motion.durationScale))),
         useNativeDriver: true,
+        isInteraction: false,
       }).start();
     },
     [activeTrack, motion.durationScale, motion.entrances],
@@ -222,12 +227,14 @@ export function BottomTabs() {
       toValue: 1,
       duration: Math.max(100, Math.round(180 * Math.max(0.55, motion.durationScale))),
       useNativeDriver: true,
+      isInteraction: false,
     }).start();
   }, [motion.durationScale, motion.entrances, pageEntrance]);
 
   const openPage = useCallback(
     (index: number, animate = true) => {
       if (index < 0 || index >= tabs.length || index === activeIndexRef.current) return;
+      setMountedMask(mask => mask | (1 << index));
       activeIndexRef.current = index;
       setActiveIndex(index);
       animateTrack(index);
@@ -278,18 +285,26 @@ export function BottomTabs() {
   return (
     <View style={[styles.root, { backgroundColor: isTech ? techTokens.colors.background : theme.colors.background }]}>
       <View style={styles.pagesContainer}>
-        <ScreenSlot active={activeIndex === 0}>
-          <Animated.View style={[styles.page, activeIndex === 0 && activePageStyle]}><QuickRecordScreen /></Animated.View>
-        </ScreenSlot>
-        <ScreenSlot active={activeIndex === 1}>
-          <Animated.View style={[styles.page, activeIndex === 1 && activePageStyle]}><HomeScreen /></Animated.View>
-        </ScreenSlot>
-        <ScreenSlot active={activeIndex === 2}>
-          <Animated.View style={[styles.page, activeIndex === 2 && activePageStyle]}><AgentScreen /></Animated.View>
-        </ScreenSlot>
-        <ScreenSlot active={activeIndex === 3}>
-          <Animated.View style={[styles.page, activeIndex === 3 && activePageStyle]}><SettingsScreen /></Animated.View>
-        </ScreenSlot>
+        {(mountedMask & 1) !== 0 ? (
+          <ScreenSlot active={activeIndex === 0}>
+            <Animated.View style={[styles.page, activeIndex === 0 && activePageStyle]}><QuickRecordScreen /></Animated.View>
+          </ScreenSlot>
+        ) : null}
+        {(mountedMask & 2) !== 0 ? (
+          <ScreenSlot active={activeIndex === 1}>
+            <Animated.View style={[styles.page, activeIndex === 1 && activePageStyle]}><HomeScreen /></Animated.View>
+          </ScreenSlot>
+        ) : null}
+        {(mountedMask & 4) !== 0 ? (
+          <ScreenSlot active={activeIndex === 2}>
+            <Animated.View style={[styles.page, activeIndex === 2 && activePageStyle]}><AgentScreen /></Animated.View>
+          </ScreenSlot>
+        ) : null}
+        {(mountedMask & 8) !== 0 ? (
+          <ScreenSlot active={activeIndex === 3}>
+            <Animated.View style={[styles.page, activeIndex === 3 && activePageStyle]}><SettingsScreen /></Animated.View>
+          </ScreenSlot>
+        ) : null}
       </View>
 
       <View
@@ -357,7 +372,7 @@ const styles = StyleSheet.create({
     paddingTop: 5,
     paddingBottom: 6,
     borderTopColor: 'rgba(85,217,255,0.28)',
-    backgroundColor: 'rgba(2, 9, 14, 0.985)',
+    backgroundColor: 'rgba(2,9,14,0.985)',
     overflow: 'hidden',
   },
   activeTrack: {
