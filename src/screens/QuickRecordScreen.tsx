@@ -16,6 +16,7 @@ import type { Entry } from '../types/entry';
 import { defaultSettings, loadSettings } from '../services/settings/SettingsService';
 import {
   initAsr,
+  requestMicrophonePermission,
   startVoiceRecord,
   stopVoiceRecord,
   subscribeAsrAmplitude,
@@ -27,6 +28,7 @@ import { listEntries } from '../services/database/EntryRepository';
 import { getTimelineGroup } from '../utils/date';
 import { saveAgentDraft } from '../services/agent/AgentDraftService';
 import { openMainTab } from '../navigation/MainTabController';
+import { useMainTabActive } from '../navigation/MainTabActivityContext';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 import { useVisualStyle } from '../theme/VisualStyleProvider';
 import { TechScreen } from '../components/tech/TechScreen';
@@ -39,7 +41,7 @@ import { techTokens } from '../theme/tech/tokens';
 
 type Phase = VoiceOrbState | 'editing';
 
-const MAX_WAVEFORM_POINTS = 34;
+const MAX_WAVEFORM_POINTS = 24;
 
 function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -76,14 +78,71 @@ function greetingText(): string {
   return '晚上好，回顾一下今天吧';
 }
 
+function RecordingAudioStage({
+  state,
+  durationText,
+  disabled,
+  onPress,
+}: {
+  state: VoiceOrbState;
+  durationText?: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const tabActive = useMainTabActive();
+  const [signal, setSignal] = useState<{ amplitude: number; waveform: number[] }>({
+    amplitude: 0,
+    waveform: [],
+  });
+
+  useEffect(() => {
+    if (state !== 'recording' || !tabActive) {
+      setSignal(previous =>
+        previous.amplitude === 0 && previous.waveform.length === 0
+          ? previous
+          : { amplitude: 0, waveform: [] },
+      );
+      return;
+    }
+
+    return subscribeAsrAmplitude(event => {
+      const level = Math.max(0, Math.min(1, event.amplitude));
+      setSignal(current => ({
+        amplitude: level,
+        waveform: [...current.waveform.slice(-(MAX_WAVEFORM_POINTS - 1)), level],
+      }));
+    });
+  }, [state, tabActive]);
+
+  return (
+    <>
+      <TechVoiceOrb
+        state={state}
+        amplitude={signal.amplitude}
+        durationText={durationText}
+        disabled={disabled}
+        onPress={onPress}
+      />
+      <TechEntrance index={1}>
+        <TechWaveform
+          levels={signal.waveform}
+          amplitude={signal.amplitude}
+          active={state === 'recording'}
+          label={state === 'recognizing' ? 'BUFFER LOCKED · TRANSCRIBING' : 'LIVE PCM SIGNAL'}
+        />
+      </TechEntrance>
+    </>
+  );
+}
+
 export function QuickRecordScreen() {
   const theme = useTheme();
   const { isTech } = useVisualStyle();
   const { showNotification } = useFluidNotification();
   const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startInFlight = useRef(false);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [phase, setPhase] = useState<Phase>('idle');
-  const [asrReady, setAsrReady] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [text, setText] = useState('');
   const [source, setSource] = useState<RecordSource>('voice');
@@ -91,8 +150,6 @@ export function QuickRecordScreen() {
   const [errorMessage, setErrorMessage] = useState('');
   const [todayEntries, setTodayEntries] = useState<Entry[]>([]);
   const [recentEntry, setRecentEntry] = useState<Entry | null>(null);
-  const [amplitude, setAmplitude] = useState(0);
-  const [waveform, setWaveform] = useState<number[]>([]);
 
   const refreshSummary = useCallback(async () => {
     const entries = await listEntries();
@@ -106,14 +163,6 @@ export function QuickRecordScreen() {
       void refreshSummary();
     }, [refreshSummary]),
   );
-
-  useEffect(() => {
-    return subscribeAsrAmplitude(event => {
-      const level = Math.max(0, Math.min(1, event.amplitude));
-      setAmplitude(level);
-      setWaveform(current => [...current.slice(-(MAX_WAVEFORM_POINTS - 1)), level]);
-    });
-  }, []);
 
   useEffect(() => {
     if (phase !== 'recording') return;
@@ -145,28 +194,28 @@ export function QuickRecordScreen() {
   const orbState: VoiceOrbState = phase === 'editing' ? 'idle' : phase;
   const busy = phase === 'initializing' || phase === 'recognizing' || phase === 'organizing';
 
-  async function ensureAsrReady() {
-    if (asrReady) return;
-    await initAsr({ numThreads: 2, language: 'auto' });
-    setAsrReady(true);
-  }
-
   async function startRecording() {
+    if (startInFlight.current || busy || phase === 'recording') return;
+    startInFlight.current = true;
     setErrorMessage('');
     setOrganizedResult(null);
     setText('');
     setSeconds(0);
-    setAmplitude(0);
-    setWaveform([]);
-    setPhase('initializing');
+
     try {
-      await ensureAsrReady();
+      const granted = await requestMicrophonePermission();
+      if (!granted) throw new Error('未获得麦克风权限，无法录音');
+
+      setPhase('initializing');
+      await initAsr({ numThreads: 2, language: 'auto' });
       await startVoiceRecord();
       setSource('voice');
       setPhase('recording');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '请检查麦克风权限和识别模型。');
       setPhase('error');
+    } finally {
+      startInFlight.current = false;
     }
   }
 
@@ -190,8 +239,8 @@ export function QuickRecordScreen() {
   }
 
   async function stopAndRecognize() {
+    if (phase !== 'recording') return;
     setPhase('recognizing');
-    setAmplitude(0);
     try {
       const result = await stopVoiceRecord();
       const recognized = result.text.trim();
@@ -228,8 +277,6 @@ export function QuickRecordScreen() {
     setText('');
     setOrganizedResult(null);
     setErrorMessage('');
-    setAmplitude(0);
-    setWaveform([]);
   }
 
   async function saveResult(result: LlmOrganizeResult) {
@@ -282,7 +329,7 @@ export function QuickRecordScreen() {
             style={[
               styles.previewItem,
               {
-                backgroundColor: isTech ? 'rgba(85, 217, 255, 0.06)' : theme.colors.surfaceVariant,
+                backgroundColor: isTech ? 'rgba(85,217,255,0.06)' : theme.colors.surfaceVariant,
                 borderColor: isTech ? techTokens.colors.line : theme.colors.outlineVariant,
               },
             ]}
@@ -462,9 +509,8 @@ export function QuickRecordScreen() {
 
           {phase === 'editing' ? editor : (
             <>
-              <TechVoiceOrb
+              <RecordingAudioStage
                 state={orbState}
-                amplitude={amplitude}
                 durationText={phase === 'recording' ? formatDuration(seconds) : undefined}
                 disabled={busy || phase === 'success'}
                 onPress={() => {
@@ -472,14 +518,6 @@ export function QuickRecordScreen() {
                   else if (phase === 'idle' || phase === 'error') void startRecording();
                 }}
               />
-              <TechEntrance index={1}>
-                <TechWaveform
-                  levels={waveform}
-                  amplitude={amplitude}
-                  active={phase === 'recording'}
-                  label={phase === 'recognizing' ? 'BUFFER LOCKED · TRANSCRIBING' : 'LIVE PCM SIGNAL'}
-                />
-              </TechEntrance>
               {phase === 'recording' ? (
                 <TechButton label="取消本次录音" variant="danger" icon="close" onPress={cancelRecording} style={{ marginTop: 12 }} />
               ) : null}
@@ -624,7 +662,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: techTokens.colors.line,
     borderRadius: techTokens.radius.md,
-    backgroundColor: 'rgba(2, 11, 17, 0.56)',
+    backgroundColor: 'rgba(2,11,17,0.56)',
     color: techTokens.colors.text,
     fontSize: 16,
     lineHeight: 24,
@@ -696,7 +734,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   techSummaryItem: {
-    backgroundColor: 'rgba(7, 23, 32, 0.78)',
+    backgroundColor: 'rgba(7,23,32,0.78)',
   },
   summaryStatusLine: {
     position: 'absolute',
