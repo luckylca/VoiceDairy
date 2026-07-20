@@ -32,38 +32,16 @@ export function TechButton({
 }: TechButtonProps) {
   const { motion } = useVisualStyle();
   const scale = useRef(new Animated.Value(1)).current;
-  const lift = useRef(new Animated.Value(0)).current;
-  const iconPulse = useRef(new Animated.Value(1)).current;
 
   function animate(pressed: boolean) {
     if (!motion.pressFeedback) return;
-    Animated.parallel([
-      Animated.spring(scale, {
-        toValue: pressed ? (variant === 'primary' ? 0.955 : 0.97) : 1,
-        speed: 34,
-        bounciness: pressed ? 0 : 5,
-        useNativeDriver: true,
-      }),
-      Animated.spring(lift, {
-        toValue: pressed ? 2 : 0,
-        speed: 34,
-        bounciness: 2,
-        useNativeDriver: true,
-      }),
-      Animated.sequence([
-        Animated.timing(iconPulse, {
-          toValue: pressed ? 0.86 : 1.12,
-          duration: Math.max(55, Math.round(100 * motion.durationScale)),
-          useNativeDriver: true,
-        }),
-        Animated.spring(iconPulse, {
-          toValue: 1,
-          speed: 35,
-          bounciness: 7,
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start();
+    scale.stopAnimation();
+    Animated.timing(scale, {
+      toValue: pressed ? 0.97 : 1,
+      duration: pressed ? 55 : 85,
+      useNativeDriver: true,
+      isInteraction: false,
+    }).start();
   }
 
   const palette = {
@@ -71,23 +49,23 @@ export function TechButton({
       backgroundColor: techTokens.colors.primary,
       borderColor: '#9DEBFF',
       color: techTokens.colors.backgroundDeep,
-      cornerColor: 'rgba(3, 8, 13, 0.48)',
+      cornerColor: 'rgba(3,8,13,0.48)',
     },
     secondary: {
-      backgroundColor: 'rgba(142, 124, 255, 0.16)',
-      borderColor: 'rgba(164, 151, 255, 0.56)',
+      backgroundColor: 'rgba(142,124,255,0.16)',
+      borderColor: 'rgba(164,151,255,0.56)',
       color: techTokens.colors.text,
       cornerColor: techTokens.colors.secondary,
     },
     ghost: {
-      backgroundColor: 'rgba(255, 255, 255, 0.026)',
+      backgroundColor: 'rgba(255,255,255,0.026)',
       borderColor: techTokens.colors.line,
       color: techTokens.colors.text,
-      cornerColor: 'rgba(119, 193, 221, 0.5)',
+      cornerColor: 'rgba(119,193,221,0.5)',
     },
     danger: {
-      backgroundColor: 'rgba(255, 111, 125, 0.12)',
-      borderColor: 'rgba(255, 111, 125, 0.48)',
+      backgroundColor: 'rgba(255,111,125,0.12)',
+      borderColor: 'rgba(255,111,125,0.48)',
       color: techTokens.colors.error,
       cornerColor: techTokens.colors.error,
     },
@@ -98,7 +76,7 @@ export function TechButton({
       style={[
         {
           opacity: disabled ? 0.46 : 1,
-          transform: [{ scale }, { translateY: lift }],
+          transform: [{ scale }],
         },
         style,
       ]}
@@ -110,27 +88,22 @@ export function TechButton({
         onPress={onPress}
         onPressIn={() => animate(true)}
         onPressOut={() => animate(false)}
-        android_ripple={{ color: 'rgba(255,255,255,0.16)', foreground: true }}
+        android_ripple={{ color: 'rgba(255,255,255,0.14)', foreground: true }}
         style={[
           styles.button,
           {
             backgroundColor: palette.backgroundColor,
             borderColor: palette.borderColor,
-            shadowColor: variant === 'primary' ? techTokens.colors.primary : palette.borderColor,
           },
         ]}
       >
         <TechCornerBrackets color={palette.cornerColor} />
         <TechShimmer
-          duration={variant === 'primary' ? 1500 : 2400}
-          color={variant === 'primary' ? 'rgba(255,255,255,0.34)' : 'rgba(133,231,255,0.12)'}
+          duration={variant === 'primary' ? 620 : 820}
+          color={variant === 'primary' ? 'rgba(255,255,255,0.28)' : 'rgba(133,231,255,0.10)'}
         />
         <View style={styles.content}>
-          {icon ? (
-            <Animated.View style={{ transform: [{ scale: iconPulse }] }}>
-              <Icon source={icon} size={19} color={palette.color} />
-            </Animated.View>
-          ) : null}
+          {icon ? <Icon source={icon} size={19} color={palette.color} /> : null}
           <Text style={[styles.label, { color: palette.color, marginLeft: icon ? 8 : 0 }]}>{label}</Text>
         </View>
       </Pressable>
@@ -146,10 +119,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 16,
     overflow: 'hidden',
-    shadowOpacity: 0.32,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    elevation: 1,
   },
   content: {
     zIndex: 2,
