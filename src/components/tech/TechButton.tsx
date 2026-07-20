@@ -1,6 +1,5 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import {
-  Animated,
   Pressable,
   StyleSheet,
   Text,
@@ -31,18 +30,6 @@ export function TechButton({
   style,
 }: TechButtonProps) {
   const { motion } = useVisualStyle();
-  const scale = useRef(new Animated.Value(1)).current;
-
-  function animate(pressed: boolean) {
-    if (!motion.pressFeedback) return;
-    scale.stopAnimation();
-    Animated.timing(scale, {
-      toValue: pressed ? 0.97 : 1,
-      duration: pressed ? 55 : 85,
-      useNativeDriver: true,
-      isInteraction: false,
-    }).start();
-  }
 
   const palette = {
     primary: {
@@ -72,42 +59,33 @@ export function TechButton({
   }[variant];
 
   return (
-    <Animated.View
-      style={[
-        {
-          opacity: disabled ? 0.46 : 1,
-          transform: [{ scale }],
-        },
-        style,
-      ]}
-    >
+    <View style={[{ opacity: disabled ? 0.46 : 1 }, style]}>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={onPress}
-        onPressIn={() => animate(true)}
-        onPressOut={() => animate(false)}
         android_ripple={{ color: 'rgba(255,255,255,0.14)', foreground: true }}
-        style={[
+        style={({ pressed }) => [
           styles.button,
           {
             backgroundColor: palette.backgroundColor,
             borderColor: palette.borderColor,
+            opacity: pressed ? 0.84 : 1,
+            transform: [{ scale: pressed && motion.pressFeedback ? 0.98 : 1 }],
           },
         ]}
       >
         <TechCornerBrackets color={palette.cornerColor} />
         <TechShimmer
-          duration={variant === 'primary' ? 620 : 820}
-          color={variant === 'primary' ? 'rgba(255,255,255,0.28)' : 'rgba(133,231,255,0.10)'}
+          color={variant === 'primary' ? 'rgba(255,255,255,0.10)' : 'rgba(133,231,255,0.045)'}
         />
         <View style={styles.content}>
           {icon ? <Icon source={icon} size={19} color={palette.color} /> : null}
           <Text style={[styles.label, { color: palette.color, marginLeft: icon ? 8 : 0 }]}>{label}</Text>
         </View>
       </Pressable>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -119,7 +97,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 16,
     overflow: 'hidden',
-    elevation: 1,
   },
   content: {
     zIndex: 2,
