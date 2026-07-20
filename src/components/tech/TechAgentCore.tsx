@@ -35,6 +35,7 @@ export function TechAgentCore({ active = true, compact = false, label = 'CONTEXT
         duration: Math.max(2800, Math.round(7600 * motion.durationScale)),
         easing: Easing.linear,
         useNativeDriver: true,
+        isInteraction: false,
       }),
     );
     const pulseLoop = Animated.loop(
@@ -44,12 +45,14 @@ export function TechAgentCore({ active = true, compact = false, label = 'CONTEXT
           duration: Math.max(480, Math.round(1100 * motion.durationScale)),
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
+          isInteraction: false,
         }),
         Animated.timing(pulse, {
           toValue: 0,
           duration: Math.max(480, Math.round(1100 * motion.durationScale)),
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
+          isInteraction: false,
         }),
       ]),
     );
@@ -66,6 +69,7 @@ export function TechAgentCore({ active = true, compact = false, label = 'CONTEXT
           duration: Math.max(650, Math.round(1200 * motion.durationScale)),
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
+          isInteraction: false,
         }),
       ]);
       dataAnimation.start();
