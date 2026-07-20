@@ -8,6 +8,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useVisualStyle } from '../../theme/VisualStyleProvider';
+import { useMainTabActive } from '../../navigation/MainTabActivityContext';
 import { techTokens } from '../../theme/tech/tokens';
 
 type TechEntranceProps = {
@@ -26,11 +27,12 @@ export function TechEntrance({
   style,
 }: TechEntranceProps) {
   const { motion } = useVisualStyle();
-  const progress = useRef(new Animated.Value(motion.entrances ? 0 : 1)).current;
+  const tabActive = useMainTabActive();
+  const progress = useRef(new Animated.Value(motion.entrances && tabActive ? 0 : 1)).current;
 
   useEffect(() => {
     progress.stopAnimation();
-    if (!motion.entrances) {
+    if (!motion.entrances || !tabActive) {
       progress.setValue(1);
       return;
     }
@@ -38,12 +40,12 @@ export function TechEntrance({
     progress.setValue(0);
     Animated.timing(progress, {
       toValue: 1,
-      delay: Math.min(index, 12) * motion.staggerMs,
-      duration: Math.max(90, Math.round(420 * motion.durationScale)),
+      delay: Math.min(index, 8) * motion.staggerMs,
+      duration: Math.max(80, Math.round(300 * Math.max(0.45, motion.durationScale))),
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [index, motion.durationScale, motion.entrances, motion.staggerMs, progress]);
+  }, [index, motion.durationScale, motion.entrances, motion.staggerMs, progress, tabActive]);
 
   const animatedStyle = useMemo(() => {
     const translate = progress.interpolate({ inputRange: [0, 1], outputRange: [distance, 0] });
@@ -56,7 +58,7 @@ export function TechEntrance({
           : from === 'right'
             ? [{ translateX: translate }]
             : from === 'scale'
-              ? [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) }]
+              ? [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) }]
               : [{ translateY: translate }];
 
     return { opacity: progress, transform };
@@ -77,35 +79,34 @@ export function TechShimmer({
   width = 110,
   height = '100%',
   color = 'rgba(133, 231, 255, 0.14)',
-  duration = 2200,
+  duration = 900,
   style,
 }: TechShimmerProps) {
   const { motion } = useVisualStyle();
+  const tabActive = useMainTabActive();
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     progress.stopAnimation();
     progress.setValue(0);
-    if (!motion.decorative) return;
+    if (!motion.decorative || !tabActive) return;
 
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(Math.round(500 * motion.durationScale)),
-        Animated.timing(progress, {
-          toValue: 1,
-          duration: Math.max(700, Math.round(duration * motion.durationScale)),
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(progress, { toValue: 0, duration: 1, useNativeDriver: true }),
-        Animated.delay(Math.round(900 * motion.durationScale)),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [duration, motion.decorative, motion.durationScale, progress]);
+    // One pass on mount/activation. The previous infinite loop meant every
+    // visible timeline card owned a permanent animation.
+    const animation = Animated.sequence([
+      Animated.delay(Math.round(100 * motion.durationScale)),
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: Math.max(420, Math.round(duration * Math.max(0.5, motion.durationScale))),
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [duration, motion.decorative, motion.durationScale, progress, tabActive]);
 
-  if (!motion.decorative) return null;
+  if (!motion.decorative || !tabActive) return null;
 
   return (
     <Animated.View
@@ -116,10 +117,10 @@ export function TechShimmer({
           width,
           height,
           backgroundColor: color,
-          opacity: progress.interpolate({ inputRange: [0, 0.2, 0.8, 1], outputRange: [0, 0.9, 0.9, 0] }),
+          opacity: progress.interpolate({ inputRange: [0, 0.18, 0.82, 1], outputRange: [0, 0.75, 0.35, 0] }),
           transform: [
             { rotate: '16deg' },
-            { translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [-260, 520] }) },
+            { translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [-240, 480] }) },
           ],
         },
         style,
