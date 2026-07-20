@@ -5,6 +5,8 @@ import { RootNavigator } from '../navigation/RootNavigator';
 import { AppThemeProvider, useAppTheme } from '../theme/AppThemeProvider';
 import { VisualStyleProvider, useVisualStyle } from '../theme/VisualStyleProvider';
 import { FluidNotificationProvider } from '../notifications/FluidNotificationProvider';
+import { TechMotionProvider } from '../components/tech/TechMotionProvider';
+import { TechTapEffectsProvider } from '../components/tech/TechTapEffectsProvider';
 import { techTokens } from '../theme/tech/tokens';
 import { prewarmAsr } from '../services/asr/AsrService';
 
@@ -13,10 +15,6 @@ function AppContent() {
   const { isTech } = useVisualStyle();
 
   useEffect(() => {
-    // Do not use InteractionManager here: long-running decorative Animated
-    // loops can keep its interaction queue occupied. Native initialization now
-    // runs on a low-priority executor, so a short timer is deterministic and
-    // does not block the JS/UI threads.
     const timer = setTimeout(() => {
       void prewarmAsr({ numThreads: 2, language: 'auto' });
     }, 850);
@@ -40,9 +38,13 @@ export default function App() {
     <SafeAreaProvider>
       <VisualStyleProvider>
         <AppThemeProvider>
-          <FluidNotificationProvider>
-            <AppContent />
-          </FluidNotificationProvider>
+          <TechMotionProvider>
+            <TechTapEffectsProvider>
+              <FluidNotificationProvider>
+                <AppContent />
+              </FluidNotificationProvider>
+            </TechTapEffectsProvider>
+          </TechMotionProvider>
         </AppThemeProvider>
       </VisualStyleProvider>
     </SafeAreaProvider>
