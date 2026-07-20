@@ -20,14 +20,24 @@ type MotionClockGlobal = typeof globalThis & {
 };
 
 const globalClock = globalThis as MotionClockGlobal;
+const existingStore = globalClock.__VOICE_DIARY_TECH_MOTION_CLOCK__;
+if (existingStore) {
+  existingStore.subscribers.clear();
+  if (existingStore.frameHandle !== null) {
+    cancelAnimationFrame(existingStore.frameHandle);
+    existingStore.frameHandle = null;
+  }
+}
+
 const store: MotionClockStore =
-  globalClock.__VOICE_DIARY_TECH_MOTION_CLOCK__ ?? {
+  existingStore ?? {
     subscribers: new Set<Subscriber>(),
     frameHandle: null,
     startedAt: Date.now(),
     appActive: AppState.currentState === 'active',
     appStateSubscription: null,
   };
+store.startedAt = Date.now();
 globalClock.__VOICE_DIARY_TECH_MOTION_CLOCK__ = store;
 
 function stopClock() {
