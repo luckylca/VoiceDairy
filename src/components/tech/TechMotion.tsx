@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  LayoutAnimation,
   StyleSheet,
   View,
   type StyleProp,
@@ -17,17 +18,36 @@ type TechEntranceProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-/**
- * Performance-safe entrance wrapper.
- *
- * The previous implementation started a native Animated node for every card,
- * message and settings section. Large lists could therefore accumulate
- * hundreds of pending NativeAnimated callbacks. The wrapper intentionally
- * keeps layout and styling only; richer motion can later be restored with a
- * UI-thread animation engine that does not enqueue bridge callbacks.
- */
-export function TechEntrance({ children, style }: TechEntranceProps) {
-  return <View style={style}>{children}</View>;
+export function TechEntrance({ children, index = 0, style }: TechEntranceProps) {
+  const { motion } = useVisualStyle();
+  const tabActive = useMainTabActive();
+  const hasEntered = useRef(false);
+  const [visible, setVisible] = useState(!motion.entrances);
+
+  useEffect(() => {
+    if (!motion.entrances) {
+      hasEntered.current = true;
+      setVisible(true);
+      return;
+    }
+    if (!tabActive || hasEntered.current) return;
+
+    const timer = setTimeout(() => {
+      LayoutAnimation.configureNext({
+        duration: Math.max(120, Math.round(220 * Math.max(0.55, motion.durationScale))),
+        update: {
+          type: LayoutAnimation.Types.easeInEaseOut,
+          property: LayoutAnimation.Properties.opacity,
+        },
+      });
+      hasEntered.current = true;
+      setVisible(true);
+    }, Math.min(index, 6) * motion.staggerMs);
+
+    return () => clearTimeout(timer);
+  }, [index, motion.durationScale, motion.entrances, motion.staggerMs, tabActive]);
+
+  return <View style={[style, { opacity: visible ? 1 : 0 }]}>{children}</View>;
 }
 
 type TechShimmerProps = {
@@ -38,7 +58,11 @@ type TechShimmerProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-/** Static highlight replacing the former per-component shimmer animation. */
+/**
+ * A static glass highlight is used inside repeated cards. Continuous shimmer is
+ * intentionally reserved for shared screen-level effects so lists never create
+ * one animation clock per row.
+ */
 export function TechShimmer({
   width = 72,
   height = '100%',
