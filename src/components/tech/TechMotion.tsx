@@ -44,6 +44,7 @@ export function TechEntrance({
       duration: Math.max(80, Math.round(300 * Math.max(0.45, motion.durationScale))),
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
+      isInteraction: false,
     }).start();
   }, [index, motion.durationScale, motion.entrances, motion.staggerMs, progress, tabActive]);
 
@@ -91,8 +92,6 @@ export function TechShimmer({
     progress.setValue(0);
     if (!motion.decorative || !tabActive) return;
 
-    // One pass on mount/activation. The previous infinite loop meant every
-    // visible timeline card owned a permanent animation.
     const animation = Animated.sequence([
       Animated.delay(Math.round(100 * motion.durationScale)),
       Animated.timing(progress, {
@@ -100,6 +99,7 @@ export function TechShimmer({
         duration: Math.max(420, Math.round(duration * Math.max(0.5, motion.durationScale))),
         easing: Easing.inOut(Easing.quad),
         useNativeDriver: true,
+        isInteraction: false,
       }),
     ]);
     animation.start();
