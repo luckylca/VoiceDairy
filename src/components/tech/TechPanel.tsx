@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { techTokens } from '../../theme/tech/tokens';
 import { useVisualStyle } from '../../theme/VisualStyleProvider';
+import { useMainTabActive } from '../../navigation/MainTabActivityContext';
 import { TechCornerBrackets, TechEntrance, TechShimmer } from './TechMotion';
 
 type TechPanelProps = {
@@ -29,48 +30,39 @@ export function TechPanel({
   corners = true,
 }: TechPanelProps) {
   const { motion } = useVisualStyle();
+  const tabActive = useMainTabActive();
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     pulse.stopAnimation();
     pulse.setValue(0);
-    if (!accent || !motion.decorative) return;
+    if (!accent || !motion.decorative || !tabActive) return;
 
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: Math.max(900, Math.round(1800 * motion.durationScale)),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: Math.max(900, Math.round(1800 * motion.durationScale)),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [accent, motion.decorative, motion.durationScale, pulse]);
+    const animation = Animated.timing(pulse, {
+      toValue: 1,
+      duration: Math.max(320, Math.round(680 * Math.max(0.5, motion.durationScale))),
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [accent, motion.decorative, motion.durationScale, pulse, tabActive]);
 
   const panel = (
-    <View style={[styles.panel, accent && styles.accent, style]}>
+    <View style={[styles.panel, accent && styles.accent, style]} renderToHardwareTextureAndroid>
       {accent ? (
         <Animated.View
           pointerEvents="none"
           style={[
             styles.accentLine,
             {
-              opacity: motion.decorative
-                ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.58, 1] })
-                : 0.72,
+              opacity: motion.decorative && tabActive
+                ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0.82] })
+                : 0.7,
               transform: [
                 {
-                  scaleY: motion.decorative
-                    ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] })
+                  scaleY: motion.decorative && tabActive
+                    ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] })
                     : 1,
                 },
               ],
@@ -79,7 +71,7 @@ export function TechPanel({
         />
       ) : null}
       {corners ? <TechCornerBrackets color={accent ? techTokens.colors.primary : 'rgba(119,193,221,0.42)'} /> : null}
-      <TechShimmer duration={accent ? 1800 : 2600} />
+      <TechShimmer duration={accent ? 720 : 900} />
       <View style={styles.content}>{children}</View>
     </View>
   );
@@ -95,14 +87,18 @@ const styles = StyleSheet.create({
     backgroundColor: techTokens.colors.surfaceGlass,
     padding: techTokens.spacing.lg,
     overflow: 'hidden',
-    ...techTokens.shadows.panel,
+    shadowColor: '#000000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   content: {
     zIndex: 2,
   },
   accent: {
-    borderColor: 'rgba(85, 217, 255, 0.34)',
-    backgroundColor: 'rgba(12, 31, 42, 0.86)',
+    borderColor: 'rgba(85,217,255,0.30)',
+    backgroundColor: 'rgba(12,31,42,0.84)',
   },
   accentLine: {
     position: 'absolute',
@@ -112,9 +108,5 @@ const styles = StyleSheet.create({
     width: 2.5,
     borderRadius: 2,
     backgroundColor: techTokens.colors.primary,
-    shadowColor: techTokens.colors.primary,
-    shadowOpacity: 0.9,
-    shadowRadius: 7,
-    elevation: 4,
   },
 });
