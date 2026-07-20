@@ -18,26 +18,29 @@ export type MotionProfile = {
   intensity: number;
 };
 
+// These profiles deliberately cap continuously animated views. The previous
+// profile used 22 independently rendered particles on every mounted tab, which
+// was visually rich but too expensive on mid-range Android devices.
 const MOTION_PROFILES: Record<MotionLevel, MotionProfile> = {
   full: {
     ambient: true,
     decorative: true,
     entrances: true,
     pressFeedback: true,
-    particleCount: 22,
+    particleCount: 8,
     durationScale: 1,
-    staggerMs: 58,
-    intensity: 1,
+    staggerMs: 42,
+    intensity: 0.82,
   },
   standard: {
     ambient: true,
     decorative: true,
     entrances: true,
     pressFeedback: true,
-    particleCount: 10,
+    particleCount: 4,
     durationScale: 0.82,
-    staggerMs: 36,
-    intensity: 0.68,
+    staggerMs: 24,
+    intensity: 0.56,
   },
   reduced: {
     ambient: false,
@@ -45,9 +48,9 @@ const MOTION_PROFILES: Record<MotionLevel, MotionProfile> = {
     entrances: true,
     pressFeedback: false,
     particleCount: 0,
-    durationScale: 0.42,
+    durationScale: 0.38,
     staggerMs: 0,
-    intensity: 0.22,
+    intensity: 0.18,
   },
   off: {
     ambient: false,
