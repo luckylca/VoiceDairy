@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Icon } from 'react-native-paper';
 import { techTokens } from '../../theme/tech/tokens';
 import { useVisualStyle } from '../../theme/VisualStyleProvider';
-import { useMainTabActive } from '../../navigation/MainTabActivityContext';
 
 export type VoiceOrbState =
   | 'idle'
@@ -40,95 +39,15 @@ export function TechVoiceOrb({
   amplitude = 0,
 }: TechVoiceOrbProps) {
   const { motion } = useVisualStyle();
-  const tabActive = useMainTabActive();
-  const cycle = useRef(new Animated.Value(0)).current;
-  const pressScale = useRef(new Animated.Value(1)).current;
-  const amplitudeValue = useRef(new Animated.Value(0)).current;
-  const stateKick = useRef(new Animated.Value(1)).current;
   const meta = stateMeta[state];
-
-  // During recording and inference, PCM/state feedback is already visible. Keep
-  // the continuous orbit only in idle state so audio work gets the frame budget.
-  const shouldAnimate = tabActive && motion.ambient && state === 'idle';
-
-  useEffect(() => {
-    amplitudeValue.stopAnimation();
-    Animated.timing(amplitudeValue, {
-      toValue: state === 'recording' ? Math.max(0, Math.min(1, amplitude)) : 0,
-      duration: 85,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-      isInteraction: false,
-    }).start();
-  }, [amplitude, amplitudeValue, state]);
-
-  useEffect(() => {
-    stateKick.stopAnimation();
-    stateKick.setValue(state === 'success' ? 0.86 : state === 'error' ? 0.92 : 0.96);
-    Animated.spring(stateKick, {
-      toValue: 1,
-      speed: 28,
-      bounciness: state === 'success' ? 8 : 3,
-      useNativeDriver: true,
-      isInteraction: false,
-    }).start();
-  }, [state, stateKick]);
-
-  useEffect(() => {
-    cycle.stopAnimation();
-    cycle.setValue(0);
-    if (!shouldAnimate) return;
-
-    const loop = Animated.loop(
-      Animated.timing(cycle, {
-        toValue: 1,
-        duration: Math.max(3600, Math.round(9000 * motion.durationScale)),
-        easing: Easing.linear,
-        useNativeDriver: true,
-        isInteraction: false,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [cycle, motion.durationScale, shouldAnimate]);
-
-  const pulse = cycle.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0, 1, 0],
-  });
-  const rotation = cycle.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const reverseRotation = cycle.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-360deg'] });
-
-  const coreScale = useMemo(
-    () =>
-      Animated.multiply(
-        stateKick,
-        Animated.add(
-          1,
-          Animated.add(
-            pulse.interpolate({ inputRange: [0, 1], outputRange: [0, 0.012] }),
-            amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0, 0.11] }),
-          ),
-        ),
-      ),
-    [amplitudeValue, pulse, stateKick],
-  );
-
-  function animatePress(toValue: number) {
-    if (!motion.pressFeedback) return;
-    pressScale.stopAnimation();
-    Animated.timing(pressScale, {
-      toValue,
-      duration: 65,
-      useNativeDriver: true,
-      isInteraction: false,
-    }).start();
-  }
+  const level = state === 'recording' ? Math.max(0, Math.min(1, amplitude)) : 0;
+  const coreScale = 1 + level * 0.075;
+  const ringScale = 1 + level * 0.12;
 
   const amplitudeBars = Array.from({ length: 9 }, (_, index) => {
     const centerDistance = Math.abs(index - 4) / 4;
     const base = 6 + (1 - centerDistance) * 8;
-    const height = base + amplitude * (15 + (1 - centerDistance) * 20);
+    const height = base + level * (15 + (1 - centerDistance) * 20);
     return (
       <View
         key={index}
@@ -136,8 +55,8 @@ export function TechVoiceOrb({
           styles.miniBar,
           {
             height,
-            opacity: 0.38 + amplitude * 0.5,
-            backgroundColor: amplitude > 0.65 ? techTokens.colors.success : meta.color,
+            opacity: 0.38 + level * 0.5,
+            backgroundColor: level > 0.65 ? techTokens.colors.success : meta.color,
           },
         ]}
       />
@@ -146,86 +65,78 @@ export function TechVoiceOrb({
 
   return (
     <View style={styles.root}>
-      <Animated.View
+      <View
         style={[
           styles.ringPulse,
           {
             borderColor: meta.color,
-            opacity: shouldAnimate ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.28, 0.04] }) : 0.12,
-            transform: [
-              {
-                scale: Animated.add(
-                  1,
-                  Animated.add(
-                    shouldAnimate ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0, 0.22] }) : 0,
-                    amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0, 0.16] }),
-                  ),
-                ),
-              },
-            ],
+            opacity: state === 'recording' ? 0.14 + level * 0.28 : 0.12,
+            transform: [{ scale: ringScale }],
           },
         ]}
       />
 
-      <Animated.View style={[styles.orbitOuter, { borderColor: `${meta.color}36`, transform: [{ rotate: rotation }] }]}>
+      <View style={[styles.orbitOuter, { borderColor: `${meta.color}36` }]}>
         <View style={[styles.orbitNode, styles.nodeOne, { backgroundColor: meta.color }]} />
         <View style={[styles.orbitNodeSmall, styles.nodeTwo, { backgroundColor: techTokens.colors.secondary }]} />
-      </Animated.View>
-      <Animated.View style={[styles.orbitInner, { borderColor: `${meta.color}48`, transform: [{ rotate: reverseRotation }] }]}>
+      </View>
+      <View style={[styles.orbitInner, { borderColor: `${meta.color}48` }]}>
         <View style={[styles.orbitNodeSmall, styles.nodeThree, { backgroundColor: techTokens.colors.success }]} />
-      </Animated.View>
+      </View>
 
       <View style={[styles.crossHairHorizontal, { backgroundColor: `${meta.color}20` }]} />
       <View style={[styles.crossHairVertical, { backgroundColor: `${meta.color}20` }]} />
 
-      <Animated.View style={[styles.pressLayer, { transform: [{ scale: pressScale }] }]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={meta.label}
-          accessibilityState={{ disabled }}
-          disabled={disabled}
-          onPress={onPress}
-          onPressIn={() => animatePress(0.94)}
-          onPressOut={() => animatePress(1)}
-        >
-          <Animated.View
-            renderToHardwareTextureAndroid
-            style={[
-              styles.core,
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={meta.label}
+        accessibilityState={{ disabled }}
+        disabled={disabled}
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.pressLayer,
+          {
+            opacity: disabled ? 0.55 : 1,
+            transform: [
               {
-                borderColor: `${meta.color}C7`,
-                opacity: disabled ? 0.55 : 1,
-                transform: [{ scale: coreScale }],
+                scale: coreScale * (pressed && motion.pressFeedback ? 0.96 : 1),
+              },
+            ],
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.core,
+            {
+              borderColor: `${meta.color}C7`,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.coreGlow,
+              {
+                backgroundColor: `${meta.color}16`,
+                opacity: 0.55 + level * 0.37,
+                transform: [{ scale: 0.9 + level * 0.2 }],
               },
             ]}
-          >
-            <Animated.View
-              style={[
-                styles.coreGlow,
-                {
-                  backgroundColor: `${meta.color}16`,
-                  opacity: amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.92] }),
-                  transform: [
-                    { scale: amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.1] }) },
-                  ],
-                },
-              ]}
-            />
-            <View style={[styles.coreInner, { backgroundColor: `${meta.color}14` }]}>
-              <Icon source={meta.icon} size={state === 'recording' ? 39 : 47} color={meta.color} />
-              {durationText ? <Text style={[styles.duration, { color: meta.color }]}>{durationText}</Text> : null}
-              {state === 'recording' ? <View style={styles.miniWave}>{amplitudeBars}</View> : null}
-            </View>
-          </Animated.View>
-        </Pressable>
-      </Animated.View>
+          />
+          <View style={[styles.coreInner, { backgroundColor: `${meta.color}14` }]}>
+            <Icon source={meta.icon} size={state === 'recording' ? 39 : 47} color={meta.color} />
+            {durationText ? <Text style={[styles.duration, { color: meta.color }]}>{durationText}</Text> : null}
+            {state === 'recording' ? <View style={styles.miniWave}>{amplitudeBars}</View> : null}
+          </View>
+        </View>
+      </Pressable>
 
       <Text style={[styles.label, { color: state === 'error' ? techTokens.colors.error : techTokens.colors.text }]}>
         {meta.label}
       </Text>
       <Text style={styles.hint}>
         {state === 'recording'
-          ? `PCM LEVEL ${Math.round(amplitude * 100).toString().padStart(3, '0')}%`
+          ? `PCM LEVEL ${Math.round(level * 100).toString().padStart(3, '0')}%`
           : 'SENSEVOICE · EDGE INFERENCE'}
       </Text>
     </View>
@@ -274,6 +185,7 @@ const styles = StyleSheet.create({
     borderRadius: 118,
     borderWidth: 1,
     borderStyle: 'dashed',
+    transform: [{ rotate: '14deg' }],
   },
   orbitInner: {
     position: 'absolute',
@@ -282,6 +194,7 @@ const styles = StyleSheet.create({
     height: 198,
     borderRadius: 99,
     borderWidth: 1,
+    transform: [{ rotate: '-19deg' }],
   },
   orbitNode: {
     position: 'absolute',
