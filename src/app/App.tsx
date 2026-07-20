@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { InteractionManager, StatusBar } from 'react-native';
+import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from '../navigation/RootNavigator';
 import { AppThemeProvider, useAppTheme } from '../theme/AppThemeProvider';
@@ -13,19 +13,15 @@ function AppContent() {
   const { isTech } = useVisualStyle();
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const task = InteractionManager.runAfterInteractions(() => {
-      // Delay the CPU-heavy model load until the first navigation/layout work
-      // has settled. initAsr is cached, so tapping record reuses this promise.
-      timer = setTimeout(() => {
-        void prewarmAsr({ numThreads: 2, language: 'auto' });
-      }, 650);
-    });
+    // Do not use InteractionManager here: long-running decorative Animated
+    // loops can keep its interaction queue occupied. Native initialization now
+    // runs on a low-priority executor, so a short timer is deterministic and
+    // does not block the JS/UI threads.
+    const timer = setTimeout(() => {
+      void prewarmAsr({ numThreads: 2, language: 'auto' });
+    }, 850);
 
-    return () => {
-      task.cancel();
-      if (timer) clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, []);
 
   return (
