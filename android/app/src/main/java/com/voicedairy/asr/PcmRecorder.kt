@@ -16,9 +16,8 @@ import kotlin.math.sqrt
 /**
  * Records microphone audio as 16 kHz mono PCM 16-bit samples.
  *
- * Besides the final PCM buffer, it emits a lightweight normalized amplitude
- * value roughly every 70 ms. The event is calculated from the real microphone
- * PCM and is intended only for UI animation; raw audio never crosses the JS bridge.
+ * A throttled normalized amplitude value is emitted for UI animation. Raw PCM
+ * stays native and is never sent across the React Native bridge.
  */
 class PcmRecorder(
     private val reactContext: ReactApplicationContext,
@@ -28,13 +27,14 @@ class PcmRecorder(
         const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-        private const val AMPLITUDE_INTERVAL_MS = 70L
+        private const val AMPLITUDE_INTERVAL_MS = 120L
+        private const val AMPLITUDE_SAMPLE_STRIDE = 4
     }
 
     private val isRecording = AtomicBoolean(false)
     private var audioRecord: AudioRecord? = null
     private var worker: Thread? = null
-    private var pcmBuffer = ByteArrayOutputStream()
+    private var pcmBuffer = ByteArrayOutputStream(32 * 1024)
     private var startedAtMs = 0L
     private var lastAmplitudeAtMs = 0L
 
@@ -54,7 +54,7 @@ class PcmRecorder(
             throw IllegalStateException("录音已经在进行中")
         }
 
-        pcmBuffer = ByteArrayOutputStream()
+        pcmBuffer = ByteArrayOutputStream(32 * 1024)
         startedAtMs = System.currentTimeMillis()
         lastAmplitudeAtMs = 0L
 
@@ -69,7 +69,7 @@ class PcmRecorder(
             throw IllegalStateException("无法创建 AudioRecord：无效的最小缓冲区大小 $minBufferSize")
         }
 
-        val readBufferSize = minBufferSize.coerceAtLeast(SAMPLE_RATE / 2)
+        val readBufferSize = minBufferSize.coerceAtLeast(4096)
         val recorder = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
             SAMPLE_RATE,
@@ -101,7 +101,7 @@ class PcmRecorder(
                         if (now - lastAmplitudeAtMs >= AMPLITUDE_INTERVAL_MS) {
                             lastAmplitudeAtMs = now
                             val amplitude = calculateNormalizedAmplitude(readBuffer, read)
-                            reactContext.runOnUiQueueThread {
+                            reactContext.runOnJSQueueThread {
                                 onAmplitude(amplitude)
                             }
                         }
@@ -114,12 +114,13 @@ class PcmRecorder(
                     // Ignore stop failures while releasing resources.
                 }
                 recorder.release()
-                reactContext.runOnUiQueueThread {
+                reactContext.runOnJSQueueThread {
                     onAmplitude(0.0)
                 }
             }
         }, "VoiceDiary-PcmRecorder")
 
+        worker?.priority = Thread.NORM_PRIORITY + 1
         worker?.start()
     }
 
@@ -156,7 +157,9 @@ class PcmRecorder(
         audioRecord = null
         worker = null
         pcmBuffer.reset()
-        onAmplitude(0.0)
+        reactContext.runOnJSQueueThread {
+            onAmplitude(0.0)
+        }
     }
 
     private fun calculateNormalizedAmplitude(bytes: ByteArray, validBytes: Int): Double {
@@ -167,7 +170,9 @@ class PcmRecorder(
         var peak = 0.0
         var sampleCount = 0
         var index = 0
-        while (index < evenByteCount) {
+        val byteStride = 2 * AMPLITUDE_SAMPLE_STRIDE
+
+        while (index + 1 < evenByteCount) {
             val low = bytes[index].toInt() and 0xFF
             val high = bytes[index + 1].toInt() shl 8
             val sample = (high or low).toShort().toInt()
@@ -175,7 +180,7 @@ class PcmRecorder(
             sumSquares += normalized * normalized
             if (normalized > peak) peak = normalized
             sampleCount += 1
-            index += 2
+            index += byteStride
         }
 
         if (sampleCount == 0) return 0.0
