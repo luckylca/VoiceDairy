@@ -3,6 +3,7 @@ import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-nativ
 import { Icon } from 'react-native-paper';
 import { techTokens } from '../../theme/tech/tokens';
 import { useVisualStyle } from '../../theme/VisualStyleProvider';
+import { useMainTabActive } from '../../navigation/MainTabActivityContext';
 
 export type VoiceOrbState =
   | 'idle'
@@ -39,91 +40,59 @@ export function TechVoiceOrb({
   amplitude = 0,
 }: TechVoiceOrbProps) {
   const { motion } = useVisualStyle();
-  const pulse = useRef(new Animated.Value(0)).current;
-  const rotate = useRef(new Animated.Value(0)).current;
-  const reverseRotate = useRef(new Animated.Value(0)).current;
+  const tabActive = useMainTabActive();
+  const cycle = useRef(new Animated.Value(0)).current;
   const pressScale = useRef(new Animated.Value(1)).current;
   const amplitudeValue = useRef(new Animated.Value(0)).current;
   const stateKick = useRef(new Animated.Value(1)).current;
   const meta = stateMeta[state];
+  const shouldAnimate = tabActive && motion.ambient && state !== 'success' && state !== 'error';
 
   useEffect(() => {
-    Animated.spring(amplitudeValue, {
+    amplitudeValue.stopAnimation();
+    Animated.timing(amplitudeValue, {
       toValue: state === 'recording' ? Math.max(0, Math.min(1, amplitude)) : 0,
-      speed: 42,
-      bounciness: 1,
+      duration: 90,
+      easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
   }, [amplitude, amplitudeValue, state]);
 
   useEffect(() => {
-    pulse.stopAnimation();
-    rotate.stopAnimation();
-    reverseRotate.stopAnimation();
-    pulse.setValue(0);
-    rotate.setValue(0);
-    reverseRotate.setValue(0);
+    stateKick.stopAnimation();
+    stateKick.setValue(state === 'success' ? 0.86 : state === 'error' ? 0.92 : 0.96);
+    Animated.spring(stateKick, {
+      toValue: 1,
+      speed: 28,
+      bounciness: state === 'success' ? 8 : 3,
+      useNativeDriver: true,
+    }).start();
+  }, [state, stateKick]);
 
-    Animated.sequence([
-      Animated.timing(stateKick, {
-        toValue: state === 'success' ? 0.82 : state === 'error' ? 0.9 : 0.94,
-        duration: Math.max(70, Math.round(130 * Math.max(0.4, motion.durationScale))),
-        useNativeDriver: true,
-      }),
-      Animated.spring(stateKick, {
+  useEffect(() => {
+    cycle.stopAnimation();
+    cycle.setValue(0);
+    if (!shouldAnimate) return;
+
+    const duration = state === 'recording' ? 5200 : state === 'idle' ? 9000 : 6800;
+    const loop = Animated.loop(
+      Animated.timing(cycle, {
         toValue: 1,
-        speed: 25,
-        bounciness: state === 'success' ? 10 : 5,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    if (!motion.ambient || state === 'success' || state === 'error') return;
-
-    const pulseDuration = state === 'recording' ? 620 : state === 'idle' ? 1800 : 980;
-    const pulseLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: Math.max(260, Math.round(pulseDuration * motion.durationScale)),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: Math.max(260, Math.round(pulseDuration * motion.durationScale)),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-
-    const rotateLoop = Animated.loop(
-      Animated.timing(rotate, {
-        toValue: 1,
-        duration: Math.max(2100, Math.round((state === 'recording' ? 5200 : 9000) * motion.durationScale)),
+        duration: Math.max(2400, Math.round(duration * motion.durationScale)),
         easing: Easing.linear,
         useNativeDriver: true,
       }),
     );
-    const reverseLoop = Animated.loop(
-      Animated.timing(reverseRotate, {
-        toValue: 1,
-        duration: Math.max(2600, Math.round((state === 'recording' ? 6900 : 12000) * motion.durationScale)),
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
+    loop.start();
+    return () => loop.stop();
+  }, [cycle, motion.durationScale, shouldAnimate, state]);
 
-    pulseLoop.start();
-    rotateLoop.start();
-    reverseLoop.start();
-    return () => {
-      pulseLoop.stop();
-      rotateLoop.stop();
-      reverseLoop.stop();
-    };
-  }, [motion.ambient, motion.durationScale, pulse, reverseRotate, rotate, state, stateKick]);
+  const pulse = cycle.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0, 1, 0],
+  });
+  const rotation = cycle.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const reverseRotation = cycle.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-360deg'] });
 
   const coreScale = useMemo(
     () =>
@@ -132,39 +101,28 @@ export function TechVoiceOrb({
         Animated.add(
           1,
           Animated.add(
-            pulse.interpolate({ inputRange: [0, 1], outputRange: [0, state === 'recording' ? 0.035 : 0.018] }),
-            amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0, 0.16] }),
+            pulse.interpolate({ inputRange: [0, 1], outputRange: [0, state === 'recording' ? 0.025 : 0.012] }),
+            amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0, 0.11] }),
           ),
         ),
       ),
     [amplitudeValue, pulse, state, stateKick],
   );
 
-  const outerScale = Animated.add(
-    1,
-    Animated.add(
-      pulse.interpolate({ inputRange: [0, 1], outputRange: [0, 0.34] }),
-      amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0, 0.24] }),
-    ),
-  );
-
-  const rotateValue = rotate.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const reverseRotateValue = reverseRotate.interpolate({ inputRange: [0, 1], outputRange: ['360deg', '0deg'] });
-
   function animatePress(toValue: number) {
     if (!motion.pressFeedback) return;
-    Animated.spring(pressScale, {
+    pressScale.stopAnimation();
+    Animated.timing(pressScale, {
       toValue,
-      speed: 38,
-      bounciness: 4,
+      duration: 70,
       useNativeDriver: true,
     }).start();
   }
 
-  const amplitudeBars = Array.from({ length: 13 }, (_, index) => {
-    const centerDistance = Math.abs(index - 6) / 6;
-    const base = 7 + (1 - centerDistance) * 11;
-    const height = base + amplitude * (25 + (1 - centerDistance) * 25);
+  const amplitudeBars = Array.from({ length: 9 }, (_, index) => {
+    const centerDistance = Math.abs(index - 4) / 4;
+    const base = 6 + (1 - centerDistance) * 8;
+    const height = base + amplitude * (15 + (1 - centerDistance) * 20);
     return (
       <View
         key={index}
@@ -172,7 +130,7 @@ export function TechVoiceOrb({
           styles.miniBar,
           {
             height,
-            opacity: 0.34 + amplitude * 0.66,
+            opacity: 0.38 + amplitude * 0.5,
             backgroundColor: amplitude > 0.65 ? techTokens.colors.success : meta.color,
           },
         ]}
@@ -187,22 +145,32 @@ export function TechVoiceOrb({
           styles.ringPulse,
           {
             borderColor: meta.color,
-            opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.44, 0.04] }),
-            transform: [{ scale: outerScale }],
+            opacity: shouldAnimate ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.28, 0.04] }) : 0.12,
+            transform: [
+              {
+                scale: Animated.add(
+                  1,
+                  Animated.add(
+                    pulse.interpolate({ inputRange: [0, 1], outputRange: [0, 0.22] }),
+                    amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0, 0.16] }),
+                  ),
+                ),
+              },
+            ],
           },
         ]}
       />
 
-      <Animated.View style={[styles.orbitOuter, { borderColor: `${meta.color}3D`, transform: [{ rotate: rotateValue }] }]}>
-        <View style={[styles.orbitNode, styles.nodeOne, { backgroundColor: meta.color, shadowColor: meta.color }]} />
+      <Animated.View style={[styles.orbitOuter, { borderColor: `${meta.color}36`, transform: [{ rotate: rotation }] }]}>
+        <View style={[styles.orbitNode, styles.nodeOne, { backgroundColor: meta.color }]} />
         <View style={[styles.orbitNodeSmall, styles.nodeTwo, { backgroundColor: techTokens.colors.secondary }]} />
       </Animated.View>
-      <Animated.View style={[styles.orbitInner, { borderColor: `${meta.color}55`, transform: [{ rotate: reverseRotateValue }] }]}>
+      <Animated.View style={[styles.orbitInner, { borderColor: `${meta.color}48`, transform: [{ rotate: reverseRotation }] }]}>
         <View style={[styles.orbitNodeSmall, styles.nodeThree, { backgroundColor: techTokens.colors.success }]} />
       </Animated.View>
 
-      <View style={[styles.crossHairHorizontal, { backgroundColor: `${meta.color}29` }]} />
-      <View style={[styles.crossHairVertical, { backgroundColor: `${meta.color}29` }]} />
+      <View style={[styles.crossHairHorizontal, { backgroundColor: `${meta.color}20` }]} />
+      <View style={[styles.crossHairVertical, { backgroundColor: `${meta.color}20` }]} />
 
       <Animated.View style={[styles.pressLayer, { transform: [{ scale: pressScale }] }]}>
         <Pressable
@@ -211,15 +179,15 @@ export function TechVoiceOrb({
           accessibilityState={{ disabled }}
           disabled={disabled}
           onPress={onPress}
-          onPressIn={() => animatePress(0.92)}
+          onPressIn={() => animatePress(0.94)}
           onPressOut={() => animatePress(1)}
         >
           <Animated.View
+            renderToHardwareTextureAndroid
             style={[
               styles.core,
               {
-                borderColor: `${meta.color}D9`,
-                shadowColor: meta.color,
+                borderColor: `${meta.color}C7`,
                 opacity: disabled ? 0.55 : 1,
                 transform: [{ scale: coreScale }],
               },
@@ -230,16 +198,14 @@ export function TechVoiceOrb({
                 styles.coreGlow,
                 {
                   backgroundColor: `${meta.color}16`,
-                  opacity: amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }),
+                  opacity: amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.92] }),
                   transform: [
-                    {
-                      scale: amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1.16] }),
-                    },
+                    { scale: amplitudeValue.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.1] }) },
                   ],
                 },
               ]}
             />
-            <View style={[styles.coreInner, { backgroundColor: `${meta.color}16` }]}>
+            <View style={[styles.coreInner, { backgroundColor: `${meta.color}14` }]}>
               <Icon source={meta.icon} size={state === 'recording' ? 39 : 47} color={meta.color} />
               {durationText ? <Text style={[styles.duration, { color: meta.color }]}>{durationText}</Text> : null}
               {state === 'recording' ? <View style={styles.miniWave}>{amplitudeBars}</View> : null}
@@ -252,7 +218,9 @@ export function TechVoiceOrb({
         {meta.label}
       </Text>
       <Text style={styles.hint}>
-        {state === 'recording' ? `PCM LEVEL ${Math.round(amplitude * 100).toString().padStart(3, '0')}%` : 'SENSEVOICE · EDGE INFERENCE'}
+        {state === 'recording'
+          ? `PCM LEVEL ${Math.round(amplitude * 100).toString().padStart(3, '0')}%`
+          : 'SENSEVOICE · EDGE INFERENCE'}
       </Text>
     </View>
   );
@@ -262,65 +230,58 @@ const styles = StyleSheet.create({
   root: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 344,
+    minHeight: 336,
   },
   pressLayer: {
     zIndex: 6,
   },
   core: {
-    width: 164,
-    height: 164,
-    borderRadius: 82,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
     borderWidth: 1.5,
-    backgroundColor: 'rgba(5, 19, 28, 0.96)',
+    backgroundColor: 'rgba(5,19,28,0.97)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOpacity: 0.56,
-    shadowRadius: 30,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 16,
     overflow: 'hidden',
   },
   coreGlow: {
     position: 'absolute',
-    width: 145,
-    height: 145,
-    borderRadius: 73,
+    width: 142,
+    height: 142,
+    borderRadius: 71,
   },
   coreInner: {
-    width: 128,
-    height: 128,
-    borderRadius: 64,
+    width: 126,
+    height: 126,
+    borderRadius: 63,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.055)',
+    borderColor: 'rgba(255,255,255,0.05)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   orbitOuter: {
     position: 'absolute',
     top: 42,
-    width: 244,
-    height: 244,
-    borderRadius: 122,
+    width: 236,
+    height: 236,
+    borderRadius: 118,
     borderWidth: 1,
     borderStyle: 'dashed',
   },
   orbitInner: {
     position: 'absolute',
     top: 61,
-    width: 206,
-    height: 206,
-    borderRadius: 103,
+    width: 198,
+    height: 198,
+    borderRadius: 99,
     borderWidth: 1,
   },
   orbitNode: {
     position: 'absolute',
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 4,
   },
   orbitNodeSmall: {
     position: 'absolute',
@@ -328,59 +289,58 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 3,
   },
-  nodeOne: { right: 26, top: 52 },
-  nodeTwo: { left: 30, bottom: 50 },
-  nodeThree: { right: 1, top: 96 },
+  nodeOne: { right: 26, top: 50 },
+  nodeTwo: { left: 28, bottom: 48 },
+  nodeThree: { right: 1, top: 92 },
   ringPulse: {
     position: 'absolute',
     top: 52,
-    width: 224,
-    height: 224,
-    borderRadius: 112,
+    width: 216,
+    height: 216,
+    borderRadius: 108,
     borderWidth: 1,
   },
   crossHairHorizontal: {
     position: 'absolute',
-    top: 163,
-    width: 278,
+    top: 158,
+    width: 266,
     height: StyleSheet.hairlineWidth,
   },
   crossHairVertical: {
     position: 'absolute',
-    top: 27,
+    top: 28,
     width: StyleSheet.hairlineWidth,
-    height: 272,
+    height: 260,
   },
   duration: {
-    marginTop: 6,
+    marginTop: 5,
     fontSize: 15,
     fontVariant: ['tabular-nums'],
-    fontWeight: '900',
+    fontWeight: '800',
   },
   miniWave: {
-    height: 22,
-    marginTop: 7,
+    height: 27,
+    marginTop: 4,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
   },
   miniBar: {
     width: 2,
-    minHeight: 3,
     borderRadius: 1,
   },
   label: {
-    marginTop: 35,
+    marginTop: 27,
     fontSize: 17,
-    fontWeight: '900',
-    letterSpacing: 0.3,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   hint: {
-    marginTop: 7,
+    marginTop: 6,
     color: techTokens.colors.textMuted,
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 1.4,
+    letterSpacing: 1.1,
     fontVariant: ['tabular-nums'],
   },
 });
