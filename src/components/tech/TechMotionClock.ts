@@ -1,4 +1,4 @@
-import { AppState } from 'react-native';
+import { AppState, type NativeEventSubscription } from 'react-native';
 import { useEffect, useState } from 'react';
 
 type Subscriber = {
@@ -7,30 +7,48 @@ type Subscriber = {
   lastEmitMs: number;
 };
 
-const subscribers = new Set<Subscriber>();
-let frameHandle: number | null = null;
-let startedAt = Date.now();
-let appActive = AppState.currentState === 'active';
+type MotionClockStore = {
+  subscribers: Set<Subscriber>;
+  frameHandle: number | null;
+  startedAt: number;
+  appActive: boolean;
+  appStateSubscription: NativeEventSubscription | null;
+};
+
+type MotionClockGlobal = typeof globalThis & {
+  __VOICE_DIARY_TECH_MOTION_CLOCK__?: MotionClockStore;
+};
+
+const globalClock = globalThis as MotionClockGlobal;
+const store: MotionClockStore =
+  globalClock.__VOICE_DIARY_TECH_MOTION_CLOCK__ ?? {
+    subscribers: new Set<Subscriber>(),
+    frameHandle: null,
+    startedAt: Date.now(),
+    appActive: AppState.currentState === 'active',
+    appStateSubscription: null,
+  };
+globalClock.__VOICE_DIARY_TECH_MOTION_CLOCK__ = store;
 
 function stopClock() {
-  if (frameHandle !== null) {
-    cancelAnimationFrame(frameHandle);
-    frameHandle = null;
+  if (store.frameHandle !== null) {
+    cancelAnimationFrame(store.frameHandle);
+    store.frameHandle = null;
   }
 }
 
 function scheduleClock() {
-  if (!appActive || subscribers.size === 0 || frameHandle !== null) return;
-  frameHandle = requestAnimationFrame(tick);
+  if (!store.appActive || store.subscribers.size === 0 || store.frameHandle !== null) return;
+  store.frameHandle = requestAnimationFrame(tick);
 }
 
 function tick() {
-  frameHandle = null;
-  if (!appActive || subscribers.size === 0) return;
+  store.frameHandle = null;
+  if (!store.appActive || store.subscribers.size === 0) return;
 
   const now = Date.now();
-  const elapsedMs = now - startedAt;
-  subscribers.forEach(subscriber => {
+  const elapsedMs = now - store.startedAt;
+  store.subscribers.forEach(subscriber => {
     if (now - subscriber.lastEmitMs >= subscriber.minIntervalMs) {
       subscriber.lastEmitMs = now;
       subscriber.listener(elapsedMs);
@@ -39,14 +57,16 @@ function tick() {
   scheduleClock();
 }
 
-AppState.addEventListener('change', state => {
-  appActive = state === 'active';
-  if (!appActive) stopClock();
-  else {
-    startedAt = Date.now();
-    scheduleClock();
-  }
-});
+if (!store.appStateSubscription) {
+  store.appStateSubscription = AppState.addEventListener('change', state => {
+    store.appActive = state === 'active';
+    if (!store.appActive) stopClock();
+    else {
+      store.startedAt = Date.now();
+      scheduleClock();
+    }
+  });
+}
 
 function subscribeMotionClock(listener: (elapsedMs: number) => void, fps: number): () => void {
   const subscriber: Subscriber = {
@@ -54,12 +74,12 @@ function subscribeMotionClock(listener: (elapsedMs: number) => void, fps: number
     minIntervalMs: 1000 / Math.max(1, fps),
     lastEmitMs: 0,
   };
-  subscribers.add(subscriber);
+  store.subscribers.add(subscriber);
   scheduleClock();
 
   return () => {
-    subscribers.delete(subscriber);
-    if (subscribers.size === 0) stopClock();
+    store.subscribers.delete(subscriber);
+    if (store.subscribers.size === 0) stopClock();
   };
 }
 
