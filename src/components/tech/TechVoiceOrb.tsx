@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Icon } from 'react-native-paper';
 import { techTokens } from '../../theme/tech/tokens';
 import { useVisualStyle } from '../../theme/VisualStyleProvider';
+import { useMainTabActive } from '../../navigation/MainTabActivityContext';
+import { useTechMotionPhase } from './TechMotionClock';
 
 export type VoiceOrbState =
   | 'idle'
@@ -38,11 +40,23 @@ export function TechVoiceOrb({
   durationText,
   amplitude = 0,
 }: TechVoiceOrbProps) {
-  const { motion } = useVisualStyle();
+  const { motion, motionLevel } = useVisualStyle();
+  const tabActive = useMainTabActive();
   const meta = stateMeta[state];
   const level = state === 'recording' ? Math.max(0, Math.min(1, amplitude)) : 0;
-  const coreScale = 1 + level * 0.075;
-  const ringScale = 1 + level * 0.12;
+  const clockEnabled = tabActive && motion.ambient && state !== 'recording' && state !== 'success' && state !== 'error';
+  const busyState = state === 'initializing' || state === 'recognizing' || state === 'organizing';
+  const phase = useTechMotionPhase(
+    clockEnabled,
+    busyState ? 10 : motionLevel === 'full' ? 22 : 13,
+    busyState ? 2400 : Math.max(4400, Math.round(7800 * Math.max(0.65, motion.durationScale))),
+  );
+  const pulse = (Math.sin(phase * Math.PI * 2) + 1) / 2;
+  const idleMotion = clockEnabled ? pulse : 0;
+  const coreScale = 1 + level * 0.075 + idleMotion * (busyState ? 0.035 : 0.018);
+  const ringScale = 1 + level * 0.12 + idleMotion * (busyState ? 0.11 : 0.06);
+  const outerRotation = clockEnabled ? `${phase * 360}deg` : '14deg';
+  const innerRotation = clockEnabled ? `${-phase * 360}deg` : '-19deg';
 
   const amplitudeBars = Array.from({ length: 9 }, (_, index) => {
     const centerDistance = Math.abs(index - 4) / 4;
@@ -70,17 +84,17 @@ export function TechVoiceOrb({
           styles.ringPulse,
           {
             borderColor: meta.color,
-            opacity: state === 'recording' ? 0.14 + level * 0.28 : 0.12,
+            opacity: state === 'recording' ? 0.14 + level * 0.28 : 0.08 + idleMotion * 0.18,
             transform: [{ scale: ringScale }],
           },
         ]}
       />
 
-      <View style={[styles.orbitOuter, { borderColor: `${meta.color}36` }]}>
+      <View style={[styles.orbitOuter, { borderColor: `${meta.color}36`, transform: [{ rotate: outerRotation }] }]}>
         <View style={[styles.orbitNode, styles.nodeOne, { backgroundColor: meta.color }]} />
         <View style={[styles.orbitNodeSmall, styles.nodeTwo, { backgroundColor: techTokens.colors.secondary }]} />
       </View>
-      <View style={[styles.orbitInner, { borderColor: `${meta.color}48` }]}>
+      <View style={[styles.orbitInner, { borderColor: `${meta.color}48`, transform: [{ rotate: innerRotation }] }]}>
         <View style={[styles.orbitNodeSmall, styles.nodeThree, { backgroundColor: techTokens.colors.success }]} />
       </View>
 
@@ -105,21 +119,14 @@ export function TechVoiceOrb({
           },
         ]}
       >
-        <View
-          style={[
-            styles.core,
-            {
-              borderColor: `${meta.color}C7`,
-            },
-          ]}
-        >
+        <View style={[styles.core, { borderColor: `${meta.color}C7` }]}>
           <View
             style={[
               styles.coreGlow,
               {
                 backgroundColor: `${meta.color}16`,
-                opacity: 0.55 + level * 0.37,
-                transform: [{ scale: 0.9 + level * 0.2 }],
+                opacity: 0.5 + level * 0.37 + idleMotion * 0.18,
+                transform: [{ scale: 0.9 + level * 0.2 + idleMotion * 0.05 }],
               },
             ]}
           />
@@ -185,7 +192,6 @@ const styles = StyleSheet.create({
     borderRadius: 118,
     borderWidth: 1,
     borderStyle: 'dashed',
-    transform: [{ rotate: '14deg' }],
   },
   orbitInner: {
     position: 'absolute',
@@ -194,7 +200,6 @@ const styles = StyleSheet.create({
     height: 198,
     borderRadius: 99,
     borderWidth: 1,
-    transform: [{ rotate: '-19deg' }],
   },
   orbitNode: {
     position: 'absolute',
