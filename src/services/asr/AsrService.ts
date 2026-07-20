@@ -1,21 +1,28 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import {
   SherpaAsr,
-  subscribeAsrAmplitude,
+  subscribeAsrAmplitude as subscribeNativeAsrAmplitude,
   type AsrAmplitudeEvent,
   type AsrInitOptions,
   type AsrResult,
 } from './NativeSherpaAsr';
 
 export type { AsrAmplitudeEvent };
-export { subscribeAsrAmplitude };
 
 export type AsrActivity = 'idle' | 'initializing' | 'recording' | 'recognizing';
 
 type ActivityListener = (activity: AsrActivity) => void;
+type AmplitudeListener = (event: AsrAmplitudeEvent) => void;
+type AmplitudeListenerEntry = {
+  listener: AmplitudeListener;
+  registeredAt: number;
+};
 
 const activityListeners = new Set<ActivityListener>();
+const amplitudeListeners = new Set<AmplitudeListenerEntry>();
+let nativeAmplitudeUnsubscribe: (() => void) | null = null;
 let currentActivity: AsrActivity = 'idle';
+let recordingStartedAt = 0;
 let initialized = false;
 let initPromise: Promise<void> | null = null;
 let initializedOptionsKey = '';
@@ -24,6 +31,38 @@ function setActivity(activity: AsrActivity) {
   if (currentActivity === activity) return;
   currentActivity = activity;
   activityListeners.forEach(listener => listener(activity));
+}
+
+function ensureNativeAmplitudeSubscription() {
+  if (nativeAmplitudeUnsubscribe) return;
+  nativeAmplitudeUnsubscribe = subscribeNativeAsrAmplitude(event => {
+    // Only listeners mounted for the current recording receive PCM updates.
+    // AgentScreen used to keep a permanent hidden listener that created a new
+    // NativeAnimated spring for every quick-record amplitude event. Filtering
+    // by registration time prevents hidden tabs from doing background work.
+    amplitudeListeners.forEach(entry => {
+      if (recordingStartedAt > 0 && entry.registeredAt >= recordingStartedAt - 80) {
+        entry.listener(event);
+      }
+    });
+  });
+}
+
+export function subscribeAsrAmplitude(listener: AmplitudeListener): () => void {
+  const entry: AmplitudeListenerEntry = {
+    listener,
+    registeredAt: Date.now(),
+  };
+  amplitudeListeners.add(entry);
+  ensureNativeAmplitudeSubscription();
+
+  return () => {
+    amplitudeListeners.delete(entry);
+    if (amplitudeListeners.size === 0 && nativeAmplitudeUnsubscribe) {
+      nativeAmplitudeUnsubscribe();
+      nativeAmplitudeUnsubscribe = null;
+    }
+  };
 }
 
 export function getAsrActivity(): AsrActivity {
@@ -125,9 +164,11 @@ export async function startVoiceRecord(): Promise<void> {
   }
 
   try {
+    recordingStartedAt = Date.now();
     await SherpaAsr.startRecord();
     setActivity('recording');
   } catch (error) {
+    recordingStartedAt = 0;
     setActivity('idle');
     throw error;
   }
@@ -138,6 +179,7 @@ export async function stopVoiceRecord(): Promise<AsrResult> {
   try {
     return await SherpaAsr.stopRecord();
   } finally {
+    recordingStartedAt = 0;
     setActivity('idle');
   }
 }
