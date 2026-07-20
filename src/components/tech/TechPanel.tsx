@@ -1,15 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import {
-  Animated,
-  Easing,
   StyleSheet,
   View,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import { techTokens } from '../../theme/tech/tokens';
-import { useVisualStyle } from '../../theme/VisualStyleProvider';
-import { useMainTabActive } from '../../navigation/MainTabActivityContext';
 import { TechCornerBrackets, TechEntrance, TechShimmer } from './TechMotion';
 
 type TechPanelProps = {
@@ -29,50 +25,13 @@ export function TechPanel({
   animated = true,
   corners = true,
 }: TechPanelProps) {
-  const { motion } = useVisualStyle();
-  const tabActive = useMainTabActive();
-  const pulse = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    pulse.stopAnimation();
-    pulse.setValue(0);
-    if (!accent || !motion.decorative || !tabActive) return;
-
-    const animation = Animated.timing(pulse, {
-      toValue: 1,
-      duration: Math.max(320, Math.round(680 * Math.max(0.5, motion.durationScale))),
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-      isInteraction: false,
-    });
-    animation.start();
-    return () => animation.stop();
-  }, [accent, motion.decorative, motion.durationScale, pulse, tabActive]);
-
   const panel = (
-    <View style={[styles.panel, accent && styles.accent, style]} renderToHardwareTextureAndroid>
-      {accent ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.accentLine,
-            {
-              opacity: motion.decorative && tabActive
-                ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0.82] })
-                : 0.7,
-              transform: [
-                {
-                  scaleY: motion.decorative && tabActive
-                    ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] })
-                    : 1,
-                },
-              ],
-            },
-          ]}
-        />
+    <View style={[styles.panel, accent && styles.accent, style]}>
+      {accent ? <View pointerEvents="none" style={styles.accentLine} /> : null}
+      {corners ? (
+        <TechCornerBrackets color={accent ? techTokens.colors.primary : 'rgba(119,193,221,0.42)'} />
       ) : null}
-      {corners ? <TechCornerBrackets color={accent ? techTokens.colors.primary : 'rgba(119,193,221,0.42)'} /> : null}
-      <TechShimmer duration={accent ? 720 : 900} />
+      <TechShimmer color={accent ? 'rgba(85,217,255,0.055)' : 'rgba(133,231,255,0.035)'} />
       <View style={styles.content}>{children}</View>
     </View>
   );
@@ -88,11 +47,6 @@ const styles = StyleSheet.create({
     backgroundColor: techTokens.colors.surfaceGlass,
     padding: techTokens.spacing.lg,
     overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
   },
   content: {
     zIndex: 2,
@@ -109,5 +63,6 @@ const styles = StyleSheet.create({
     width: 2.5,
     borderRadius: 2,
     backgroundColor: techTokens.colors.primary,
+    opacity: 0.78,
   },
 });
