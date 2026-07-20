@@ -1,5 +1,5 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Icon, Text, TouchableRipple, useTheme } from 'react-native-paper';
 import { QuickRecordScreen } from '../screens/QuickRecordScreen';
@@ -13,6 +13,8 @@ import { useVisualStyle } from '../theme/VisualStyleProvider';
 import { techTokens } from '../theme/tech/tokens';
 
 const LAST_MAIN_TAB_KEY = 'voicediary.navigation.last-main-tab.v1';
+const SWIPE_DISTANCE = 46;
+const SWIPE_VELOCITY = 0.35;
 
 type TabDefinition = {
   name: MainTabName;
@@ -39,17 +41,6 @@ const ClassicTab = memo(function ClassicTab({
   onPress: () => void;
 }) {
   const theme = useTheme();
-  const progress = useRef(new Animated.Value(focused ? 1 : 0)).current;
-
-  useEffect(() => {
-    progress.stopAnimation();
-    Animated.timing(progress, {
-      toValue: focused ? 1 : 0,
-      duration: 120,
-      useNativeDriver: true,
-      isInteraction: false,
-    }).start();
-  }, [focused, progress]);
 
   return (
     <View style={styles.tabSlot}>
@@ -58,20 +49,17 @@ const ClassicTab = memo(function ClassicTab({
         accessibilityRole="tab"
         accessibilityState={{ selected: focused }}
         accessibilityLabel={tab.label}
-        style={[styles.classicTab, { backgroundColor: focused ? theme.colors.secondaryContainer : 'transparent' }]}
+        style={[
+          styles.classicTab,
+          { backgroundColor: focused ? theme.colors.secondaryContainer : 'transparent' },
+        ]}
       >
         <View style={styles.tabContent}>
-          <Animated.View
-            style={{
-              transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] }) }],
-            }}
-          >
-            <Icon
-              source={focused ? tab.activeIcon : tab.inactiveIcon}
-              size={23}
-              color={focused ? theme.colors.onSecondaryContainer : theme.colors.onSurfaceVariant}
-            />
-          </Animated.View>
+          <Icon
+            source={focused ? tab.activeIcon : tab.inactiveIcon}
+            size={focused ? 24 : 23}
+            color={focused ? theme.colors.onSecondaryContainer : theme.colors.onSurfaceVariant}
+          />
           <Text
             variant="labelSmall"
             style={{
@@ -97,44 +85,17 @@ const TechTab = memo(function TechTab({
   focused: boolean;
   onPress: () => void;
 }) {
-  const { motion } = useVisualStyle();
-  const focus = useRef(new Animated.Value(focused ? 1 : 0)).current;
-  const press = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    focus.stopAnimation();
-    if (!motion.entrances) {
-      focus.setValue(focused ? 1 : 0);
-      return;
-    }
-    Animated.timing(focus, {
-      toValue: focused ? 1 : 0,
-      duration: Math.max(80, Math.round(120 * Math.max(0.5, motion.durationScale))),
-      useNativeDriver: true,
-      isInteraction: false,
-    }).start();
-  }, [focus, focused, motion.durationScale, motion.entrances]);
-
-  function animatePress(value: number) {
-    if (!motion.pressFeedback) return;
-    press.stopAnimation();
-    Animated.timing(press, {
-      toValue: value,
-      duration: 60,
-      useNativeDriver: true,
-      isInteraction: false,
-    }).start();
-  }
-
   return (
     <Pressable
       accessibilityRole="tab"
       accessibilityState={{ selected: focused }}
       accessibilityLabel={tab.label}
       onPress={onPress}
-      onPressIn={() => animatePress(0.95)}
-      onPressOut={() => animatePress(1)}
-      style={styles.techTab}
+      style={({ pressed }) => [
+        styles.techTab,
+        focused && styles.techTabFocused,
+        pressed && styles.techTabPressed,
+      ]}
     >
       {focused ? (
         <View pointerEvents="none" style={styles.techSelectedFrame}>
@@ -142,18 +103,7 @@ const TechTab = memo(function TechTab({
           <View style={styles.techSelectedLine} />
         </View>
       ) : null}
-      <Animated.View
-        style={[
-          styles.tabContent,
-          {
-            opacity: focus.interpolate({ inputRange: [0, 1], outputRange: [0.66, 1] }),
-            transform: [
-              { scale: Animated.multiply(press, focus.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.015] })) },
-              { translateY: focus.interpolate({ inputRange: [0, 1], outputRange: [1, -1] }) },
-            ],
-          },
-        ]}
-      >
+      <View style={styles.tabContent}>
         <View style={[styles.techIconShell, focused && styles.techIconShellFocused]}>
           <Icon
             source={focused ? tab.activeIcon : tab.inactiveIcon}
@@ -173,7 +123,7 @@ const TechTab = memo(function TechTab({
           {tab.label}
         </Text>
         <Text style={[styles.techCode, focused && styles.techCodeFocused]}>{tab.code}</Text>
-      </Animated.View>
+      </View>
     </Pressable>
   );
 });
@@ -185,7 +135,7 @@ function ScreenSlot({ active, children }: { active: boolean; children: React.Rea
         pointerEvents={active ? 'auto' : 'none'}
         accessibilityElementsHidden={!active}
         importantForAccessibility={active ? 'auto' : 'no-hide-descendants'}
-        style={[styles.page, !active && styles.pageHidden]}
+        style={[styles.pageSlot, active ? styles.pageActive : styles.pageHidden]}
       >
         {children}
       </View>
@@ -193,40 +143,79 @@ function ScreenSlot({ active, children }: { active: boolean; children: React.Rea
   );
 }
 
+function TabLoadingFallback({ isTech }: { isTech: boolean }) {
+  return (
+    <View style={[styles.loadingPage, { backgroundColor: isTech ? techTokens.colors.background : undefined }]}>
+      <Text
+        variant="titleMedium"
+        style={{ color: isTech ? techTokens.colors.text : undefined, fontWeight: '800' }}
+      >
+        正在载入页面
+      </Text>
+      <Text
+        variant="bodySmall"
+        style={{ marginTop: 6, color: isTech ? techTokens.colors.textMuted : undefined }}
+      >
+        首次打开后会保持在内存中，后续切换将立即显示。
+      </Text>
+    </View>
+  );
+}
+
 export function BottomTabs() {
   const theme = useTheme();
-  const { isTech, motion } = useVisualStyle();
+  const { isTech } = useVisualStyle();
   const activeIndexRef = useRef(0);
-  const pageEntrance = useRef(new Animated.Value(1)).current;
+  const mountedMaskRef = useRef(1);
   const [activeIndex, setActiveIndex] = useState(0);
   const [mountedMask, setMountedMask] = useState(1);
 
-  const animatePageEntrance = useCallback(() => {
-    pageEntrance.stopAnimation();
-    if (!motion.entrances) {
-      pageEntrance.setValue(1);
-      return;
-    }
-    pageEntrance.setValue(0);
-    Animated.timing(pageEntrance, {
-      toValue: 1,
-      duration: Math.max(90, Math.round(150 * Math.max(0.55, motion.durationScale))),
-      useNativeDriver: true,
-      isInteraction: false,
-    }).start();
-  }, [motion.durationScale, motion.entrances, pageEntrance]);
+  const mountPage = useCallback((index: number) => {
+    const bit = 1 << index;
+    if ((mountedMaskRef.current & bit) !== 0) return;
+    mountedMaskRef.current |= bit;
+    setMountedMask(mountedMaskRef.current);
+  }, []);
 
   const openPage = useCallback(
-    (index: number, animate = true) => {
-      if (index < 0 || index >= tabs.length || index === activeIndexRef.current) return;
-      setMountedMask(mask => mask | (1 << index));
-      activeIndexRef.current = index;
-      setActiveIndex(index);
-      if (animate) animatePageEntrance();
-      else pageEntrance.setValue(1);
-      void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[index]?.name ?? 'record');
+    (index: number) => {
+      if (index < 0 || index >= tabs.length) return;
+
+      if (index !== activeIndexRef.current) {
+        activeIndexRef.current = index;
+        setActiveIndex(index);
+        void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[index]?.name ?? 'record');
+      }
+
+      if ((mountedMaskRef.current & (1 << index)) === 0) {
+        requestAnimationFrame(() => mountPage(index));
+      }
     },
-    [animatePageEntrance, pageEntrance],
+    [mountPage],
+  );
+
+  const swipeResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_event, gesture) => {
+          const horizontal = Math.abs(gesture.dx);
+          const vertical = Math.abs(gesture.dy);
+          return horizontal > 14 && horizontal > vertical * 1.35;
+        },
+        onPanResponderTerminationRequest: () => true,
+        onPanResponderRelease: (_event, gesture) => {
+          const shouldSwitch =
+            Math.abs(gesture.dx) >= SWIPE_DISTANCE || Math.abs(gesture.vx) >= SWIPE_VELOCITY;
+          if (!shouldSwitch) return;
+
+          const direction = gesture.dx < 0 ? 1 : -1;
+          const nextIndex = Math.max(0, Math.min(tabs.length - 1, activeIndexRef.current + direction));
+          openPage(nextIndex);
+        },
+        onPanResponderTerminate: () => undefined,
+      }),
+    [openPage],
   );
 
   useEffect(() => {
@@ -245,40 +234,51 @@ export function BottomTabs() {
         const lastIndex = tabs.findIndex(tab => tab.name === lastTab);
         targetIndex = lastIndex >= 0 ? lastIndex : 0;
       }
-      if (targetIndex > 0) openPage(targetIndex, false);
+      if (targetIndex > 0) openPage(targetIndex);
     })();
 
     return unsubscribe;
   }, [openPage]);
 
-  const activePageStyle = {
-    opacity: pageEntrance,
-    transform: [{ translateY: pageEntrance.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }],
-  };
+  useEffect(() => {
+    // Pre-mount hidden tabs in small batches. Settings is intentionally first so
+    // the page is ready before most users reach it, without blocking first paint.
+    const settingsTimer = setTimeout(() => mountPage(3), 90);
+    const timelineTimer = setTimeout(() => mountPage(1), 210);
+    const agentTimer = setTimeout(() => mountPage(2), 380);
+    return () => {
+      clearTimeout(settingsTimer);
+      clearTimeout(timelineTimer);
+      clearTimeout(agentTimer);
+    };
+  }, [mountPage]);
+
+  const activeMounted = (mountedMask & (1 << activeIndex)) !== 0;
 
   return (
     <View style={[styles.root, { backgroundColor: isTech ? techTokens.colors.background : theme.colors.background }]}>
-      <View style={styles.pagesContainer}>
+      <View style={styles.pagesContainer} {...swipeResponder.panHandlers}>
         {(mountedMask & 1) !== 0 ? (
           <ScreenSlot active={activeIndex === 0}>
-            <Animated.View style={[styles.page, activeIndex === 0 && activePageStyle]}><QuickRecordScreen /></Animated.View>
+            <QuickRecordScreen />
           </ScreenSlot>
         ) : null}
         {(mountedMask & 2) !== 0 ? (
           <ScreenSlot active={activeIndex === 1}>
-            <Animated.View style={[styles.page, activeIndex === 1 && activePageStyle]}><HomeScreen /></Animated.View>
+            <HomeScreen />
           </ScreenSlot>
         ) : null}
         {(mountedMask & 4) !== 0 ? (
           <ScreenSlot active={activeIndex === 2}>
-            <Animated.View style={[styles.page, activeIndex === 2 && activePageStyle]}><AgentScreen /></Animated.View>
+            <AgentScreen />
           </ScreenSlot>
         ) : null}
         {(mountedMask & 8) !== 0 ? (
           <ScreenSlot active={activeIndex === 3}>
-            <Animated.View style={[styles.page, activeIndex === 3 && activePageStyle]}><SettingsScreen /></Animated.View>
+            <SettingsScreen />
           </ScreenSlot>
         ) : null}
+        {!activeMounted ? <TabLoadingFallback isTech={isTech} /> : null}
       </View>
 
       <View
@@ -303,10 +303,28 @@ export function BottomTabs() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  pagesContainer: { flex: 1 },
-  page: { flex: 1 },
+  pagesContainer: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  pageSlot: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  pageActive: {
+    opacity: 1,
+    zIndex: 2,
+  },
   pageHidden: {
-    display: 'none',
+    opacity: 0,
+    zIndex: 0,
+  },
+  loadingPage: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
   },
   tabBar: {
     height: 72,
@@ -347,6 +365,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
     borderRadius: 15,
     overflow: 'hidden',
+  },
+  techTabFocused: {
+    backgroundColor: 'rgba(85,217,255,0.025)',
+  },
+  techTabPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.98 }],
   },
   techSelectedFrame: {
     ...StyleSheet.absoluteFillObject,
