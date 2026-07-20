@@ -43,6 +43,7 @@ export function TechPanel({
       duration: Math.max(320, Math.round(680 * Math.max(0.5, motion.durationScale))),
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
+      isInteraction: false,
     });
     animation.start();
     return () => animation.stop();
