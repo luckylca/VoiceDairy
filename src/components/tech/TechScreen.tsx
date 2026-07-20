@@ -1,14 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import React, { useMemo } from 'react';
+import { Animated, StyleSheet, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import { techTokens } from '../../theme/tech/tokens';
 import { useVisualStyle } from '../../theme/VisualStyleProvider';
 import { useMainTabActive } from '../../navigation/MainTabActivityContext';
-import {
-  getAsrActivity,
-  subscribeAsrActivity,
-  type AsrActivity,
-} from '../../services/asr/AsrService';
-import { useTechMotionPhase } from './TechMotionClock';
+import { useTechMotionValue } from './TechMotionProvider';
 
 type TechScreenProps = {
   children: React.ReactNode;
@@ -21,39 +16,47 @@ type Particle = {
   top: number;
   size: number;
   opacity: number;
+  secondary: boolean;
 };
 
 export function TechScreen({ children, style, ambient = true }: TechScreenProps) {
   const { width, height } = useWindowDimensions();
   const { motion, motionLevel } = useVisualStyle();
   const tabActive = useMainTabActive();
-  const [asrActivity, setAsrActivity] = useState<AsrActivity>(getAsrActivity());
+  const { phase, running } = useTechMotionValue();
 
-  useEffect(() => subscribeAsrActivity(setAsrActivity), []);
-
-  const effectsAllowed = tabActive && asrActivity === 'idle';
-  const runAmbient = ambient && effectsAllowed && motion.ambient;
-  const showDecorative = effectsAllowed && motion.decorative;
-  const fps = motionLevel === 'full' ? 24 : 14;
-  const periodMs = Math.max(5200, Math.round(9000 * Math.max(0.65, motion.durationScale)));
-  const phase = useTechMotionPhase(runAmbient, fps, periodMs);
-
-  const wave = (Math.sin(phase * Math.PI * 2) + 1) / 2;
-  const reverseWave = 1 - wave;
-  const scanProgress = (phase * 1.65) % 1;
-  const rotation = `${-12 + phase * 40}deg`;
-  const reverseRotation = `${18 - phase * 38}deg`;
+  const runAmbient = ambient && tabActive && running;
+  const showDecorative = tabActive && motion.decorative;
 
   const particles = useMemo<Particle[]>(
     () =>
       Array.from({ length: showDecorative ? motion.particleCount : 0 }, (_, index) => ({
         left: (((index * 73 + 19) % 97) / 100) * width,
         top: (((index * 47 + 13) % 101) / 100) * height,
-        size: 1.4 + (index % 3) * 0.8,
-        opacity: 0.22 + (index % 4) * 0.11,
+        size: 1.5 + (index % 3) * 0.75,
+        opacity: 0.2 + (index % 5) * 0.1,
+        secondary: index % 4 === 0,
       })),
     [height, motion.particleCount, showDecorative, width],
   );
+
+  const primaryGlowStyle = runAmbient
+    ? {
+        opacity: phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.2, 0.46, 0.2] }),
+        transform: [
+          { translateX: phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [-20, 18, -20] }) },
+          { translateY: phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [10, -16, 10] }) },
+          { scale: phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.92, 1.06, 0.92] }) },
+        ],
+      }
+    : { opacity: 0.15, transform: [{ scale: 0.96 }] };
+
+  const secondaryGlowStyle = runAmbient
+    ? {
+        opacity: phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.28, 0.1, 0.28] }),
+        transform: [{ scale: phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1.03, 0.93, 1.03] }) }],
+      }
+    : { opacity: 0.09, transform: [{ scale: 0.96 }] };
 
   return (
     <View style={[styles.root, style]}>
@@ -67,52 +70,64 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
           ))}
         </View>
 
-        <View
-          style={[
-            styles.glowPrimary,
-            {
-              opacity: runAmbient ? 0.2 + wave * 0.24 : 0.15,
-              transform: [
-                { translateX: runAmbient ? -20 + wave * 38 : 0 },
-                { translateY: runAmbient ? 10 - wave * 26 : 0 },
-                { scale: runAmbient ? 0.92 + wave * 0.13 : 0.96 },
-              ],
-            },
-          ]}
-        />
-        <View
-          style={[
-            styles.glowSecondary,
-            {
-              opacity: runAmbient ? 0.1 + reverseWave * 0.17 : 0.09,
-              transform: [{ scale: runAmbient ? 0.93 + reverseWave * 0.1 : 0.96 }],
-            },
-          ]}
-        />
+        <Animated.View style={[styles.glowPrimary, primaryGlowStyle]} />
+        <Animated.View style={[styles.glowSecondary, secondaryGlowStyle]} />
 
         {showDecorative ? (
           <>
-            <View style={[styles.orbitLarge, { transform: [{ rotate: rotation }] }]}>
+            <Animated.View
+              renderToHardwareTextureAndroid
+              style={[
+                styles.orbitLarge,
+                {
+                  transform: [
+                    {
+                      rotate: runAmbient
+                        ? phase.interpolate({ inputRange: [0, 1], outputRange: ['-12deg', '348deg'] })
+                        : '14deg',
+                    },
+                  ],
+                },
+              ]}
+            >
+              <View style={styles.cometTail} />
               <View style={styles.orbitNodePrimary} />
               <View style={styles.orbitNodeSecondary} />
-            </View>
-            <View style={[styles.orbitSmall, { transform: [{ rotate: reverseRotation }] }]}>
+            </Animated.View>
+            <Animated.View
+              renderToHardwareTextureAndroid
+              style={[
+                styles.orbitSmall,
+                {
+                  transform: [
+                    {
+                      rotate: runAmbient
+                        ? phase.interpolate({ inputRange: [0, 1], outputRange: ['18deg', '-342deg'] })
+                        : '-19deg',
+                    },
+                  ],
+                },
+              ]}
+            >
               <View style={styles.orbitNodeSmall} />
-            </View>
+            </Animated.View>
           </>
         ) : null}
 
         {particles.length > 0 ? (
-          <View
+          <Animated.View
+            renderToHardwareTextureAndroid
             style={[
               StyleSheet.absoluteFill,
-              {
-                opacity: runAmbient ? 0.72 + wave * 0.28 : 0.7,
-                transform: [
-                  { translateY: runAmbient ? 8 - phase * 20 : 0 },
-                  { translateX: runAmbient ? -4 + wave * 10 : 0 },
-                ],
-              },
+              runAmbient
+                ? {
+                    opacity: phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.72, 1, 0.72] }),
+                    transform: [
+                      { translateY: phase.interpolate({ inputRange: [0, 1], outputRange: [8, -16] }) },
+                      { translateX: phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [-4, 6, -4] }) },
+                    ],
+                  }
+                : { opacity: 0.72 },
             ]}
           >
             {particles.map((particle, index) => (
@@ -127,25 +142,37 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
                     height: particle.size,
                     borderRadius: particle.size,
                     opacity: particle.opacity,
+                    backgroundColor: particle.secondary
+                      ? techTokens.colors.secondary
+                      : techTokens.colors.primary,
                   },
                 ]}
               />
             ))}
-          </View>
+          </Animated.View>
         ) : null}
 
-        {showDecorative && motion.particleCount > 4 ? (
-          <View
+        {showDecorative && motionLevel === 'full' ? (
+          <Animated.View
+            renderToHardwareTextureAndroid
             style={[
               styles.scanBeam,
-              {
-                opacity: runAmbient
-                  ? scanProgress < 0.08
-                    ? (scanProgress / 0.08) * 0.36
-                    : (1 - scanProgress) * 0.22
-                  : 0,
-                transform: [{ translateY: -60 + scanProgress * (height + 120) }],
-              },
+              runAmbient
+                ? {
+                    opacity: phase.interpolate({
+                      inputRange: [0, 0.08, 0.78, 0.88, 1],
+                      outputRange: [0, 0.38, 0.16, 0, 0],
+                    }),
+                    transform: [
+                      {
+                        translateY: phase.interpolate({
+                          inputRange: [0, 0.88, 1],
+                          outputRange: [-60, height + 60, height + 60],
+                        }),
+                      },
+                    ],
+                  }
+                : { opacity: 0 },
             ]}
           />
         ) : null}
@@ -206,7 +233,7 @@ const styles = StyleSheet.create({
     height: 290,
     borderRadius: 145,
     borderWidth: 1,
-    borderColor: 'rgba(85,217,255,0.08)',
+    borderColor: 'rgba(85,217,255,0.09)',
     right: -170,
     top: 60,
   },
@@ -216,15 +243,26 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 90,
     borderWidth: 1,
-    borderColor: 'rgba(142,124,255,0.10)',
+    borderColor: 'rgba(142,124,255,0.11)',
     left: -110,
     top: '43%',
   },
+  cometTail: {
+    position: 'absolute',
+    right: 40,
+    top: 31,
+    width: 42,
+    height: 2,
+    borderRadius: 2,
+    opacity: 0.35,
+    backgroundColor: techTokens.colors.primary,
+    transform: [{ rotate: '-36deg' }],
+  },
   orbitNodePrimary: {
     position: 'absolute',
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: techTokens.colors.primary,
     top: 36,
     right: 47,
@@ -240,17 +278,14 @@ const styles = StyleSheet.create({
   },
   orbitNodeSmall: {
     position: 'absolute',
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
     backgroundColor: techTokens.colors.success,
     right: 15,
     top: 68,
   },
-  particle: {
-    position: 'absolute',
-    backgroundColor: techTokens.colors.primary,
-  },
+  particle: { position: 'absolute' },
   scanBeam: {
     position: 'absolute',
     left: -20,
