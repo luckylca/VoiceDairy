@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Icon, Text, TouchableRipple, useTheme } from 'react-native-paper';
 import { QuickRecordScreen } from '../screens/QuickRecordScreen';
@@ -13,8 +13,6 @@ import { useVisualStyle } from '../theme/VisualStyleProvider';
 import { techTokens } from '../theme/tech/tokens';
 
 const LAST_MAIN_TAB_KEY = 'voicediary.navigation.last-main-tab.v1';
-const TAB_BAR_HORIZONTAL_PADDING = 8;
-const TRACK_INSET = 4;
 
 type TabDefinition = {
   name: MainTabName;
@@ -111,7 +109,7 @@ const TechTab = memo(function TechTab({
     }
     Animated.timing(focus, {
       toValue: focused ? 1 : 0,
-      duration: Math.max(90, Math.round(150 * Math.max(0.5, motion.durationScale))),
+      duration: Math.max(80, Math.round(120 * Math.max(0.5, motion.durationScale))),
       useNativeDriver: true,
       isInteraction: false,
     }).start();
@@ -122,7 +120,7 @@ const TechTab = memo(function TechTab({
     press.stopAnimation();
     Animated.timing(press, {
       toValue: value,
-      duration: 70,
+      duration: 60,
       useNativeDriver: true,
       isInteraction: false,
     }).start();
@@ -134,17 +132,23 @@ const TechTab = memo(function TechTab({
       accessibilityState={{ selected: focused }}
       accessibilityLabel={tab.label}
       onPress={onPress}
-      onPressIn={() => animatePress(0.94)}
+      onPressIn={() => animatePress(0.95)}
       onPressOut={() => animatePress(1)}
       style={styles.techTab}
     >
+      {focused ? (
+        <View pointerEvents="none" style={styles.techSelectedFrame}>
+          <View style={styles.techSelectedGlow} />
+          <View style={styles.techSelectedLine} />
+        </View>
+      ) : null}
       <Animated.View
         style={[
           styles.tabContent,
           {
             opacity: focus.interpolate({ inputRange: [0, 1], outputRange: [0.66, 1] }),
             transform: [
-              { scale: Animated.multiply(press, focus.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.02] })) },
+              { scale: Animated.multiply(press, focus.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.015] })) },
               { translateY: focus.interpolate({ inputRange: [0, 1], outputRange: [1, -1] }) },
             ],
           },
@@ -193,28 +197,9 @@ export function BottomTabs() {
   const theme = useTheme();
   const { isTech, motion } = useVisualStyle();
   const activeIndexRef = useRef(0);
-  const activeTrack = useRef(new Animated.Value(0)).current;
   const pageEntrance = useRef(new Animated.Value(1)).current;
   const [activeIndex, setActiveIndex] = useState(0);
   const [mountedMask, setMountedMask] = useState(1);
-  const [tabBarWidth, setTabBarWidth] = useState(0);
-
-  const animateTrack = useCallback(
-    (index: number) => {
-      activeTrack.stopAnimation();
-      if (!motion.entrances) {
-        activeTrack.setValue(index);
-        return;
-      }
-      Animated.timing(activeTrack, {
-        toValue: index,
-        duration: Math.max(90, Math.round(150 * Math.max(0.55, motion.durationScale))),
-        useNativeDriver: true,
-        isInteraction: false,
-      }).start();
-    },
-    [activeTrack, motion.durationScale, motion.entrances],
-  );
 
   const animatePageEntrance = useCallback(() => {
     pageEntrance.stopAnimation();
@@ -225,7 +210,7 @@ export function BottomTabs() {
     pageEntrance.setValue(0);
     Animated.timing(pageEntrance, {
       toValue: 1,
-      duration: Math.max(100, Math.round(180 * Math.max(0.55, motion.durationScale))),
+      duration: Math.max(90, Math.round(150 * Math.max(0.55, motion.durationScale))),
       useNativeDriver: true,
       isInteraction: false,
     }).start();
@@ -237,12 +222,11 @@ export function BottomTabs() {
       setMountedMask(mask => mask | (1 << index));
       activeIndexRef.current = index;
       setActiveIndex(index);
-      animateTrack(index);
       if (animate) animatePageEntrance();
       else pageEntrance.setValue(1);
       void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[index]?.name ?? 'record');
     },
-    [animatePageEntrance, animateTrack, pageEntrance],
+    [animatePageEntrance, pageEntrance],
   );
 
   useEffect(() => {
@@ -267,19 +251,9 @@ export function BottomTabs() {
     return unsubscribe;
   }, [openPage]);
 
-  function handleTabBarLayout(event: LayoutChangeEvent) {
-    const nextWidth = event.nativeEvent.layout.width;
-    setTabBarWidth(previous => (Math.abs(previous - nextWidth) > 0.5 ? nextWidth : previous));
-    activeTrack.setValue(activeIndexRef.current);
-  }
-
-  const innerWidth = Math.max(0, tabBarWidth - TAB_BAR_HORIZONTAL_PADDING * 2);
-  const segmentWidth = innerWidth / tabs.length;
-  const trackWidth = Math.max(0, segmentWidth - TRACK_INSET * 2);
-  const trackStart = TAB_BAR_HORIZONTAL_PADDING + TRACK_INSET;
   const activePageStyle = {
     opacity: pageEntrance,
-    transform: [{ translateY: pageEntrance.interpolate({ inputRange: [0, 1], outputRange: [5, 0] }) }],
+    transform: [{ translateY: pageEntrance.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }],
   };
 
   return (
@@ -308,7 +282,6 @@ export function BottomTabs() {
       </View>
 
       <View
-        onLayout={handleTabBarLayout}
         style={[
           styles.tabBar,
           isTech
@@ -316,29 +289,6 @@ export function BottomTabs() {
             : { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outlineVariant },
         ]}
       >
-        {isTech && tabBarWidth > 0 ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.activeTrack,
-              {
-                width: trackWidth,
-                transform: [
-                  {
-                    translateX: activeTrack.interpolate({
-                      inputRange: [0, tabs.length - 1],
-                      outputRange: [trackStart, trackStart + segmentWidth * (tabs.length - 1)],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <View style={styles.activeTrackGlow} />
-            <View style={styles.activeTrackLine} />
-          </Animated.View>
-        ) : null}
-
         {tabs.map((tab, index) =>
           isTech ? (
             <TechTab key={tab.name} tab={tab} focused={activeIndex === index} onPress={() => openPage(index)} />
@@ -368,41 +318,12 @@ const styles = StyleSheet.create({
   },
   techTabBar: {
     height: 78,
-    paddingHorizontal: TAB_BAR_HORIZONTAL_PADDING,
+    paddingHorizontal: 8,
     paddingTop: 5,
     paddingBottom: 6,
     borderTopColor: 'rgba(85,217,255,0.28)',
     backgroundColor: 'rgba(2,9,14,0.985)',
     overflow: 'hidden',
-  },
-  activeTrack: {
-    position: 'absolute',
-    left: 0,
-    top: 5,
-    bottom: 5,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(85,217,255,0.24)',
-    backgroundColor: 'rgba(85,217,255,0.055)',
-    overflow: 'hidden',
-  },
-  activeTrackGlow: {
-    position: 'absolute',
-    left: '24%',
-    right: '24%',
-    top: -10,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(85,217,255,0.09)',
-  },
-  activeTrackLine: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 0,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: techTokens.colors.primary,
   },
   tabSlot: {
     flex: 1,
@@ -415,14 +336,43 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   tabContent: {
+    zIndex: 2,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   techTab: {
-    zIndex: 2,
     flex: 1,
     height: '100%',
+    marginHorizontal: 2,
+    borderRadius: 15,
+    overflow: 'hidden',
+  },
+  techSelectedFrame: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(85,217,255,0.24)',
+    backgroundColor: 'rgba(85,217,255,0.055)',
+    overflow: 'hidden',
+  },
+  techSelectedGlow: {
+    position: 'absolute',
+    left: '24%',
+    right: '24%',
+    top: -10,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(85,217,255,0.09)',
+  },
+  techSelectedLine: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 0,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: techTokens.colors.primary,
   },
   techIconShell: {
     width: 36,
