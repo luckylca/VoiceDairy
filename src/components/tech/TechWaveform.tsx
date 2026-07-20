@@ -1,8 +1,6 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { techTokens } from '../../theme/tech/tokens';
-import { useVisualStyle } from '../../theme/VisualStyleProvider';
-import { useMainTabActive } from '../../navigation/MainTabActivityContext';
 import { TechCornerBrackets } from './TechMotion';
 
 type TechWaveformProps = {
@@ -20,36 +18,6 @@ export function TechWaveform({
   active = false,
   label = 'LIVE PCM SIGNAL',
 }: TechWaveformProps) {
-  const { motion } = useVisualStyle();
-  const tabActive = useMainTabActive();
-  const pulse = useRef(new Animated.Value(0)).current;
-  const shouldAnimate = active && tabActive && motion.ambient;
-
-  useEffect(() => {
-    pulse.stopAnimation();
-    pulse.setValue(0);
-    if (!shouldAnimate) return;
-
-    const pulseLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: Math.max(360, Math.round(760 * motion.durationScale)),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: Math.max(360, Math.round(760 * motion.durationScale)),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    pulseLoop.start();
-    return () => pulseLoop.stop();
-  }, [motion.durationScale, pulse, shouldAnimate]);
-
   const normalizedLevels = useMemo(() => {
     const source = levels.slice(-BAR_COUNT);
     const missing = BAR_COUNT - source.length;
@@ -65,20 +33,12 @@ export function TechWaveform({
       <TechCornerBrackets color={active ? techTokens.colors.primary : techTokens.colors.line} />
       <View style={styles.header}>
         <View style={styles.liveRow}>
-          <Animated.View
+          <View
             style={[
               styles.liveDot,
               {
-                opacity: shouldAnimate
-                  ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.42, 1] })
-                  : 0.3,
-                transform: [
-                  {
-                    scale: shouldAnimate
-                      ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1.18] })
-                      : 1,
-                  },
-                ],
+                opacity: active ? 0.42 + amplitude * 0.58 : 0.25,
+                backgroundColor: amplitude > 0.68 ? techTokens.colors.success : techTokens.colors.error,
               },
             ]}
           />
@@ -148,7 +108,6 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     marginRight: 7,
-    backgroundColor: techTokens.colors.error,
   },
   label: {
     color: techTokens.colors.textMuted,
