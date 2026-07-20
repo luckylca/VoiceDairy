@@ -1,8 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Animated,
-  AppState,
-  Easing,
   StyleSheet,
   View,
   useWindowDimensions,
@@ -27,106 +24,42 @@ type Particle = {
   left: number;
   top: number;
   size: number;
-  phase: number;
+  opacity: number;
 };
 
+/**
+ * Static technology background.
+ *
+ * Native Animated loops were previously restarted whenever tabs, ASR state or
+ * motion settings changed. On Android that could leave hundreds of pending
+ * NativeAnimated callbacks. This version keeps the visual language while doing
+ * no continuous bridge-driven animation.
+ */
 export function TechScreen({ children, style, ambient = true }: TechScreenProps) {
   const { width, height } = useWindowDimensions();
   const { motion } = useVisualStyle();
   const tabActive = useMainTabActive();
-  const drift = useRef(new Animated.Value(0)).current;
-  const scan = useRef(new Animated.Value(0)).current;
-  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const [asrActivity, setAsrActivity] = useState<AsrActivity>(getAsrActivity());
 
-  const effectsAllowed = tabActive && asrActivity === 'idle';
-  const runAmbient = ambient && appActive && effectsAllowed && motion.ambient;
-  const showDecorative = effectsAllowed && motion.decorative;
+  const showDecorative = ambient && tabActive && asrActivity === 'idle' && motion.decorative;
+  const staticParticleCount = showDecorative ? Math.min(motion.particleCount, 6) : 0;
 
   const particles = useMemo<Particle[]>(
     () =>
-      Array.from({ length: showDecorative ? motion.particleCount : 0 }, (_, index) => ({
+      Array.from({ length: staticParticleCount }, (_, index) => ({
         left: (((index * 73 + 19) % 97) / 100) * width,
         top: (((index * 47 + 13) % 101) / 100) * height,
         size: 1.4 + (index % 3) * 0.8,
-        phase: (index % 5) / 5,
+        opacity: 0.24 + (index % 4) * 0.09,
       })),
-    [height, motion.particleCount, showDecorative, width],
+    [height, staticParticleCount, width],
   );
 
-  useEffect(() => {
-    const appSubscription = AppState.addEventListener('change', state => setAppActive(state === 'active'));
-    const asrSubscription = subscribeAsrActivity(setAsrActivity);
-    return () => {
-      appSubscription.remove();
-      asrSubscription();
-    };
-  }, []);
-
-  useEffect(() => {
-    drift.stopAnimation();
-    scan.stopAnimation();
-    drift.setValue(0);
-    scan.setValue(0);
-    if (!runAmbient) return;
-
-    const driftLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(drift, {
-          toValue: 1,
-          duration: Math.max(2800, Math.round(6800 * motion.durationScale)),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-        Animated.timing(drift, {
-          toValue: 0,
-          duration: Math.max(2800, Math.round(6800 * motion.durationScale)),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-          isInteraction: false,
-        }),
-      ]),
-    );
-
-    driftLoop.start();
-
-    let scanLoop: Animated.CompositeAnimation | null = null;
-    if (motion.particleCount > 4) {
-      scanLoop = Animated.loop(
-        Animated.sequence([
-          Animated.delay(900),
-          Animated.timing(scan, {
-            toValue: 1,
-            duration: Math.max(2200, Math.round(5200 * motion.durationScale)),
-            easing: Easing.linear,
-            useNativeDriver: true,
-            isInteraction: false,
-          }),
-          Animated.timing(scan, {
-            toValue: 0,
-            duration: 1,
-            useNativeDriver: true,
-            isInteraction: false,
-          }),
-          Animated.delay(1400),
-        ]),
-      );
-      scanLoop.start();
-    }
-
-    return () => {
-      driftLoop.stop();
-      scanLoop?.stop();
-    };
-  }, [drift, motion.durationScale, motion.particleCount, runAmbient, scan]);
-
-  const orbitRotation = drift.interpolate({ inputRange: [0, 1], outputRange: ['-12deg', '28deg'] });
-  const reverseOrbitRotation = drift.interpolate({ inputRange: [0, 1], outputRange: ['18deg', '-20deg'] });
+  useEffect(() => subscribeAsrActivity(setAsrActivity), []);
 
   return (
     <View style={[styles.root, style]}>
-      <View pointerEvents="none" style={StyleSheet.absoluteFill} renderToHardwareTextureAndroid>
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         <View style={styles.gridLayer}>
           {Array.from({ length: 7 }, (_, index) => (
             <View key={`h-${index}`} style={[styles.gridHorizontal, { top: `${index * 16.66}%` }]} />
@@ -136,96 +69,39 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
           ))}
         </View>
 
-        <Animated.View
-          style={[
-            styles.glowPrimary,
-            {
-              opacity: runAmbient
-                ? drift.interpolate({ inputRange: [0, 1], outputRange: [0.22, 0.5] })
-                : 0.15,
-              transform: [
-                { translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [-20, 18] }) },
-                { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [10, -16] }) },
-                { scale: drift.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.06] }) },
-              ],
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.glowSecondary,
-            {
-              opacity: runAmbient
-                ? drift.interpolate({ inputRange: [0, 1], outputRange: [0.28, 0.12] })
-                : 0.09,
-              transform: [{ scale: drift.interpolate({ inputRange: [0, 1], outputRange: [1.03, 0.93] }) }],
-            },
-          ]}
-        />
+        <View style={styles.glowPrimary} />
+        <View style={styles.glowSecondary} />
 
         {showDecorative ? (
           <>
-            <Animated.View style={[styles.orbitLarge, { transform: [{ rotate: orbitRotation }] }]}>
+            <View style={styles.orbitLarge}>
               <View style={styles.orbitNodePrimary} />
               <View style={styles.orbitNodeSecondary} />
-            </Animated.View>
-            <Animated.View style={[styles.orbitSmall, { transform: [{ rotate: reverseOrbitRotation }] }]}>
+            </View>
+            <View style={styles.orbitSmall}>
               <View style={styles.orbitNodeSmall} />
-            </Animated.View>
+            </View>
           </>
         ) : null}
 
-        {particles.map((particle, index) => {
-          const phaseOffset = particle.phase * 14;
-          return (
-            <Animated.View
-              key={`particle-${index}`}
-              style={[
-                styles.particle,
-                {
-                  left: particle.left,
-                  top: particle.top,
-                  width: particle.size,
-                  height: particle.size,
-                  borderRadius: particle.size,
-                  opacity: drift.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [0.18 + particle.phase * 0.18, 0.62, 0.25],
-                  }),
-                  transform: [
-                    {
-                      translateY: drift.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [phaseOffset, -20 - phaseOffset],
-                      }),
-                    },
-                    {
-                      translateX: drift.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [index % 2 === 0 ? -4 : 4, index % 2 === 0 ? 8 : -8],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            />
-          );
-        })}
-
-        {showDecorative && motion.particleCount > 4 ? (
-          <Animated.View
+        {particles.map((particle, index) => (
+          <View
+            key={`particle-${index}`}
             style={[
-              styles.scanBeam,
+              styles.particle,
               {
-                opacity: scan.interpolate({ inputRange: [0, 0.08, 0.88, 1], outputRange: [0, 0.42, 0.18, 0] }),
-                transform: [
-                  { translateY: scan.interpolate({ inputRange: [0, 1], outputRange: [-60, height + 60] }) },
-                ],
+                left: particle.left,
+                top: particle.top,
+                width: particle.size,
+                height: particle.size,
+                borderRadius: particle.size,
+                opacity: particle.opacity,
               },
             ]}
           />
-        ) : null}
+        ))}
 
+        {showDecorative && motion.particleCount > 4 ? <View style={styles.scanBeam} /> : null}
         <View style={styles.vignetteTop} />
         <View style={styles.vignetteBottom} />
       </View>
@@ -242,7 +118,7 @@ const styles = StyleSheet.create({
   },
   gridLayer: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.22,
+    opacity: 0.2,
   },
   gridHorizontal: {
     position: 'absolute',
@@ -260,21 +136,23 @@ const styles = StyleSheet.create({
   },
   glowPrimary: {
     position: 'absolute',
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    top: -110,
-    right: -135,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    top: -105,
+    right: -130,
     backgroundColor: techTokens.colors.glow,
+    opacity: 0.22,
   },
   glowSecondary: {
     position: 'absolute',
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    left: -150,
-    bottom: -120,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    left: -140,
+    bottom: -112,
     backgroundColor: techTokens.colors.glowSecondary,
+    opacity: 0.14,
   },
   orbitLarge: {
     position: 'absolute',
@@ -285,6 +163,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(85,217,255,0.08)',
     right: -170,
     top: 60,
+    transform: [{ rotate: '18deg' }],
   },
   orbitSmall: {
     position: 'absolute',
@@ -295,6 +174,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(142,124,255,0.10)',
     left: -110,
     top: '43%',
+    transform: [{ rotate: '-14deg' }],
   },
   orbitNodePrimary: {
     position: 'absolute',
@@ -331,11 +211,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: -20,
     right: -20,
-    top: 0,
-    height: 48,
+    top: '32%',
+    height: 42,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(116,229,255,0.38)',
-    backgroundColor: 'rgba(85,217,255,0.018)',
+    borderTopColor: 'rgba(116,229,255,0.22)',
+    backgroundColor: 'rgba(85,217,255,0.012)',
+    transform: [{ rotate: '-3deg' }],
   },
   vignetteTop: {
     position: 'absolute',
