@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import PagerView from 'react-native-pager-view';
 import { Icon, Text, TouchableRipple, useTheme } from 'react-native-paper';
 import { QuickRecordScreen } from '../screens/QuickRecordScreen';
 import { HomeScreen } from '../screens/HomeScreen';
@@ -9,11 +8,13 @@ import { AgentScreen } from '../screens/AgentScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { loadSettings } from '../services/settings/SettingsService';
 import { subscribeMainTab, type MainTabName } from './MainTabController';
+import { MainTabActivityProvider } from './MainTabActivityContext';
 import { useVisualStyle } from '../theme/VisualStyleProvider';
 import { techTokens } from '../theme/tech/tokens';
-import { TechShimmer } from '../components/tech/TechMotion';
 
 const LAST_MAIN_TAB_KEY = 'voicediary.navigation.last-main-tab.v1';
+const TAB_BAR_HORIZONTAL_PADDING = 8;
+const TRACK_INSET = 4;
 
 type TabDefinition = {
   name: MainTabName;
@@ -30,14 +31,23 @@ const tabs: TabDefinition[] = [
   { name: 'settings', label: '设置', activeIcon: 'cog', inactiveIcon: 'cog-outline', code: 'SYS' },
 ];
 
-function ClassicTab({ tab, focused, onPress }: { tab: TabDefinition; focused: boolean; onPress: () => void }) {
+const ClassicTab = memo(function ClassicTab({
+  tab,
+  focused,
+  onPress,
+}: {
+  tab: TabDefinition;
+  focused: boolean;
+  onPress: () => void;
+}) {
   const theme = useTheme();
   const progress = useRef(new Animated.Value(focused ? 1 : 0)).current;
 
   useEffect(() => {
+    progress.stopAnimation();
     Animated.timing(progress, {
       toValue: focused ? 1 : 0,
-      duration: 130,
+      duration: 120,
       useNativeDriver: true,
     }).start();
   }, [focused, progress]);
@@ -54,7 +64,7 @@ function ClassicTab({ tab, focused, onPress }: { tab: TabDefinition; focused: bo
         <View style={styles.tabContent}>
           <Animated.View
             style={{
-              transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }],
+              transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] }) }],
             }}
           >
             <Icon
@@ -73,26 +83,23 @@ function ClassicTab({ tab, focused, onPress }: { tab: TabDefinition; focused: bo
           >
             {tab.label}
           </Text>
-          <Animated.View
-            style={[
-              styles.classicIndicator,
-              {
-                opacity: progress,
-                backgroundColor: theme.colors.primary,
-                transform: [{ scaleX: progress.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }) }],
-              },
-            ]}
-          />
         </View>
       </TouchableRipple>
     </View>
   );
-}
+});
 
-function TechTab({ tab, focused, onPress }: { tab: TabDefinition; focused: boolean; onPress: () => void }) {
+const TechTab = memo(function TechTab({
+  tab,
+  focused,
+  onPress,
+}: {
+  tab: TabDefinition;
+  focused: boolean;
+  onPress: () => void;
+}) {
   const { motion } = useVisualStyle();
   const focus = useRef(new Animated.Value(focused ? 1 : 0)).current;
-  const pulse = useRef(new Animated.Value(0)).current;
   const press = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -101,41 +108,21 @@ function TechTab({ tab, focused, onPress }: { tab: TabDefinition; focused: boole
       focus.setValue(focused ? 1 : 0);
       return;
     }
-    Animated.spring(focus, {
+    Animated.timing(focus, {
       toValue: focused ? 1 : 0,
-      speed: 26,
-      bounciness: focused ? 7 : 2,
+      duration: Math.max(90, Math.round(150 * Math.max(0.5, motion.durationScale))),
       useNativeDriver: true,
     }).start();
-  }, [focus, focused, motion.entrances]);
-
-  useEffect(() => {
-    pulse.stopAnimation();
-    pulse.setValue(0);
-    if (!focused || !motion.ambient) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: Math.max(420, Math.round(1050 * motion.durationScale)),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: Math.max(420, Math.round(1050 * motion.durationScale)),
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [focused, motion.ambient, motion.durationScale, pulse]);
+  }, [focus, focused, motion.durationScale, motion.entrances]);
 
   function animatePress(value: number) {
     if (!motion.pressFeedback) return;
-    Animated.spring(press, { toValue: value, speed: 38, bounciness: 4, useNativeDriver: true }).start();
+    press.stopAnimation();
+    Animated.timing(press, {
+      toValue: value,
+      duration: 70,
+      useNativeDriver: true,
+    }).start();
   }
 
   return (
@@ -144,7 +131,7 @@ function TechTab({ tab, focused, onPress }: { tab: TabDefinition; focused: boole
       accessibilityState={{ selected: focused }}
       accessibilityLabel={tab.label}
       onPress={onPress}
-      onPressIn={() => animatePress(0.92)}
+      onPressIn={() => animatePress(0.94)}
       onPressOut={() => animatePress(1)}
       style={styles.techTab}
     >
@@ -152,35 +139,22 @@ function TechTab({ tab, focused, onPress }: { tab: TabDefinition; focused: boole
         style={[
           styles.tabContent,
           {
-            opacity: focus.interpolate({ inputRange: [0, 1], outputRange: [0.68, 1] }),
+            opacity: focus.interpolate({ inputRange: [0, 1], outputRange: [0.66, 1] }),
             transform: [
-              { scale: Animated.multiply(press, focus.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.04] })) },
-              { translateY: focus.interpolate({ inputRange: [0, 1], outputRange: [1, -2] }) },
+              { scale: Animated.multiply(press, focus.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.02] })) },
+              { translateY: focus.interpolate({ inputRange: [0, 1], outputRange: [1, -1] }) },
             ],
           },
         ]}
       >
-        <Animated.View
-          style={[
-            styles.techIconShell,
-            focused && styles.techIconShellFocused,
-            {
-              opacity: focused
-                ? pulse.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] })
-                : 1,
-              transform: [
-                { rotate: focus.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '4deg'] }) },
-              ],
-            },
-          ]}
-        >
+        <View style={[styles.techIconShell, focused && styles.techIconShellFocused]}>
           <Icon
             source={focused ? tab.activeIcon : tab.inactiveIcon}
             size={22}
             color={focused ? techTokens.colors.primary : techTokens.colors.textMuted}
           />
           {focused ? <View style={styles.iconSignalDot} /> : null}
-        </Animated.View>
+        </View>
         <Text
           variant="labelSmall"
           style={{
@@ -195,46 +169,74 @@ function TechTab({ tab, focused, onPress }: { tab: TabDefinition; focused: boole
       </Animated.View>
     </Pressable>
   );
+});
+
+function ScreenSlot({ active, children }: { active: boolean; children: React.ReactNode }) {
+  return (
+    <MainTabActivityProvider active={active}>
+      <View
+        pointerEvents={active ? 'auto' : 'none'}
+        accessibilityElementsHidden={!active}
+        importantForAccessibility={active ? 'auto' : 'no-hide-descendants'}
+        style={[styles.page, !active && styles.pageHidden]}
+      >
+        {children}
+      </View>
+    </MainTabActivityProvider>
+  );
 }
 
 export function BottomTabs() {
   const theme = useTheme();
-  const { width } = useWindowDimensions();
   const { isTech, motion } = useVisualStyle();
-  const pagerRef = useRef<PagerView>(null);
   const activeIndexRef = useRef(0);
   const activeTrack = useRef(new Animated.Value(0)).current;
+  const pageEntrance = useRef(new Animated.Value(1)).current;
   const [activeIndex, setActiveIndex] = useState(0);
+  const [tabBarWidth, setTabBarWidth] = useState(0);
 
-  const pages = useMemo(
-    () => [
-      <View key="record" collapsable={false} style={styles.page}><QuickRecordScreen /></View>,
-      <View key="timeline" collapsable={false} style={styles.page}><HomeScreen /></View>,
-      <View key="agent" collapsable={false} style={styles.page}><AgentScreen /></View>,
-      <View key="settings" collapsable={false} style={styles.page}><SettingsScreen /></View>,
-    ],
-    [],
+  const animateTrack = useCallback(
+    (index: number) => {
+      activeTrack.stopAnimation();
+      if (!motion.entrances) {
+        activeTrack.setValue(index);
+        return;
+      }
+      Animated.timing(activeTrack, {
+        toValue: index,
+        duration: Math.max(90, Math.round(150 * Math.max(0.55, motion.durationScale))),
+        useNativeDriver: true,
+      }).start();
+    },
+    [activeTrack, motion.durationScale, motion.entrances],
   );
 
-  function animateTrack(index: number) {
-    activeTrack.stopAnimation();
+  const animatePageEntrance = useCallback(() => {
+    pageEntrance.stopAnimation();
     if (!motion.entrances) {
-      activeTrack.setValue(index);
+      pageEntrance.setValue(1);
       return;
     }
-    Animated.spring(activeTrack, {
-      toValue: index,
-      speed: 22,
-      bounciness: motion.intensity > 0.8 ? 9 : 4,
+    pageEntrance.setValue(0);
+    Animated.timing(pageEntrance, {
+      toValue: 1,
+      duration: Math.max(100, Math.round(180 * Math.max(0.55, motion.durationScale))),
       useNativeDriver: true,
     }).start();
-  }
+  }, [motion.durationScale, motion.entrances, pageEntrance]);
 
-  function openPage(index: number, animated = true) {
-    if (index < 0 || index >= tabs.length || index === activeIndexRef.current) return;
-    if (animated) pagerRef.current?.setPage(index);
-    else pagerRef.current?.setPageWithoutAnimation(index);
-  }
+  const openPage = useCallback(
+    (index: number, animate = true) => {
+      if (index < 0 || index >= tabs.length || index === activeIndexRef.current) return;
+      activeIndexRef.current = index;
+      setActiveIndex(index);
+      animateTrack(index);
+      if (animate) animatePageEntrance();
+      else pageEntrance.setValue(1);
+      void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[index]?.name ?? 'record');
+    },
+    [animatePageEntrance, animateTrack, pageEntrance],
+  );
 
   useEffect(() => {
     const unsubscribe = subscribeMainTab(tab => {
@@ -252,37 +254,46 @@ export function BottomTabs() {
         const lastIndex = tabs.findIndex(tab => tab.name === lastTab);
         targetIndex = lastIndex >= 0 ? lastIndex : 0;
       }
-      if (targetIndex > 0) requestAnimationFrame(() => openPage(targetIndex, false));
+      if (targetIndex > 0) openPage(targetIndex, false);
     })();
 
     return unsubscribe;
-  }, []);
+  }, [openPage]);
 
-  const trackWidth = Math.max(52, (width - 16) / tabs.length - 12);
-  const trackStep = (width - 16) / tabs.length;
+  function handleTabBarLayout(event: LayoutChangeEvent) {
+    const nextWidth = event.nativeEvent.layout.width;
+    setTabBarWidth(previous => (Math.abs(previous - nextWidth) > 0.5 ? nextWidth : previous));
+    activeTrack.setValue(activeIndexRef.current);
+  }
+
+  const innerWidth = Math.max(0, tabBarWidth - TAB_BAR_HORIZONTAL_PADDING * 2);
+  const segmentWidth = innerWidth / tabs.length;
+  const trackWidth = Math.max(0, segmentWidth - TRACK_INSET * 2);
+  const trackStart = TAB_BAR_HORIZONTAL_PADDING + TRACK_INSET;
+  const activePageStyle = {
+    opacity: pageEntrance,
+    transform: [{ translateY: pageEntrance.interpolate({ inputRange: [0, 1], outputRange: [5, 0] }) }],
+  };
 
   return (
     <View style={[styles.root, { backgroundColor: isTech ? techTokens.colors.background : theme.colors.background }]}>
-      <PagerView
-        ref={pagerRef}
-        style={styles.pager}
-        initialPage={0}
-        orientation="horizontal"
-        scrollEnabled
-        overScrollMode="never"
-        offscreenPageLimit={1}
-        onPageSelected={event => {
-          const index = event.nativeEvent.position;
-          activeIndexRef.current = index;
-          setActiveIndex(index);
-          animateTrack(index);
-          void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[index]?.name ?? 'record');
-        }}
-      >
-        {pages}
-      </PagerView>
+      <View style={styles.pagesContainer}>
+        <ScreenSlot active={activeIndex === 0}>
+          <Animated.View style={[styles.page, activeIndex === 0 && activePageStyle]}><QuickRecordScreen /></Animated.View>
+        </ScreenSlot>
+        <ScreenSlot active={activeIndex === 1}>
+          <Animated.View style={[styles.page, activeIndex === 1 && activePageStyle]}><HomeScreen /></Animated.View>
+        </ScreenSlot>
+        <ScreenSlot active={activeIndex === 2}>
+          <Animated.View style={[styles.page, activeIndex === 2 && activePageStyle]}><AgentScreen /></Animated.View>
+        </ScreenSlot>
+        <ScreenSlot active={activeIndex === 3}>
+          <Animated.View style={[styles.page, activeIndex === 3 && activePageStyle]}><SettingsScreen /></Animated.View>
+        </ScreenSlot>
+      </View>
 
       <View
+        onLayout={handleTabBarLayout}
         style={[
           styles.tabBar,
           isTech
@@ -290,30 +301,27 @@ export function BottomTabs() {
             : { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outlineVariant },
         ]}
       >
-        {isTech ? (
-          <>
-            <TechShimmer duration={2600} color="rgba(85,217,255,0.08)" />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.activeTrack,
-                {
-                  width: trackWidth,
-                  transform: [
-                    {
-                      translateX: activeTrack.interpolate({
-                        inputRange: [0, tabs.length - 1],
-                        outputRange: [6, 6 + trackStep * (tabs.length - 1)],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            >
-              <View style={styles.activeTrackGlow} />
-              <View style={styles.activeTrackLine} />
-            </Animated.View>
-          </>
+        {isTech && tabBarWidth > 0 ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.activeTrack,
+              {
+                width: trackWidth,
+                transform: [
+                  {
+                    translateX: activeTrack.interpolate({
+                      inputRange: [0, tabs.length - 1],
+                      outputRange: [trackStart, trackStart + segmentWidth * (tabs.length - 1)],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <View style={styles.activeTrackGlow} />
+            <View style={styles.activeTrackLine} />
+          </Animated.View>
         ) : null}
 
         {tabs.map((tab, index) =>
@@ -330,8 +338,11 @@ export function BottomTabs() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  pager: { flex: 1 },
+  pagesContainer: { flex: 1 },
   page: { flex: 1 },
+  pageHidden: {
+    display: 'none',
+  },
   tabBar: {
     height: 72,
     flexDirection: 'row',
@@ -342,7 +353,7 @@ const styles = StyleSheet.create({
   },
   techTabBar: {
     height: 78,
-    paddingHorizontal: 8,
+    paddingHorizontal: TAB_BAR_HORIZONTAL_PADDING,
     paddingTop: 5,
     paddingBottom: 6,
     borderTopColor: 'rgba(85,217,255,0.28)',
@@ -352,27 +363,27 @@ const styles = StyleSheet.create({
   activeTrack: {
     position: 'absolute',
     left: 0,
-    top: 4,
-    bottom: 4,
-    borderRadius: 16,
+    top: 5,
+    bottom: 5,
+    borderRadius: 15,
     borderWidth: 1,
-    borderColor: 'rgba(85,217,255,0.20)',
-    backgroundColor: 'rgba(85,217,255,0.045)',
+    borderColor: 'rgba(85,217,255,0.24)',
+    backgroundColor: 'rgba(85,217,255,0.055)',
     overflow: 'hidden',
   },
   activeTrackGlow: {
     position: 'absolute',
-    left: '20%',
-    right: '20%',
-    top: -12,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(85,217,255,0.11)',
+    left: '24%',
+    right: '24%',
+    top: -10,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(85,217,255,0.09)',
   },
   activeTrackLine: {
     position: 'absolute',
-    left: 16,
-    right: 16,
+    left: 14,
+    right: 14,
     bottom: 0,
     height: 2,
     borderRadius: 1,
@@ -393,12 +404,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  classicIndicator: {
-    width: 22,
-    height: 3,
-    borderRadius: 2,
-    marginTop: 3,
-  },
   techTab: {
     zIndex: 2,
     flex: 1,
@@ -414,12 +419,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   techIconShellFocused: {
-    borderColor: 'rgba(85,217,255,0.38)',
-    backgroundColor: 'rgba(85,217,255,0.09)',
-    shadowColor: techTokens.colors.primary,
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-    elevation: 3,
+    borderColor: 'rgba(85,217,255,0.34)',
+    backgroundColor: 'rgba(85,217,255,0.085)',
   },
   iconSignalDot: {
     position: 'absolute',
