@@ -10,6 +10,12 @@ import {
 } from 'react-native';
 import { techTokens } from '../../theme/tech/tokens';
 import { useVisualStyle } from '../../theme/VisualStyleProvider';
+import { useMainTabActive } from '../../navigation/MainTabActivityContext';
+import {
+  getAsrActivity,
+  subscribeAsrActivity,
+  type AsrActivity,
+} from '../../services/asr/AsrService';
 
 type TechScreenProps = {
   children: React.ReactNode;
@@ -27,99 +33,98 @@ type Particle = {
 export function TechScreen({ children, style, ambient = true }: TechScreenProps) {
   const { width, height } = useWindowDimensions();
   const { motion } = useVisualStyle();
+  const tabActive = useMainTabActive();
   const drift = useRef(new Animated.Value(0)).current;
   const scan = useRef(new Animated.Value(0)).current;
-  const orbit = useRef(new Animated.Value(0)).current;
-  const [active, setActive] = useState(AppState.currentState === 'active');
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const [asrActivity, setAsrActivity] = useState<AsrActivity>(getAsrActivity());
+
+  const effectsAllowed = tabActive && asrActivity === 'idle';
+  const runAmbient = ambient && appActive && effectsAllowed && motion.ambient;
+  const showDecorative = effectsAllowed && motion.decorative;
 
   const particles = useMemo<Particle[]>(
     () =>
-      Array.from({ length: motion.particleCount }, (_, index) => ({
-        left: ((index * 73 + 19) % 97) / 100 * width,
-        top: ((index * 47 + 13) % 101) / 100 * height,
-        size: 1.2 + (index % 4) * 0.8,
-        phase: (index % 7) / 7,
+      Array.from({ length: showDecorative ? motion.particleCount : 0 }, (_, index) => ({
+        left: (((index * 73 + 19) % 97) / 100) * width,
+        top: (((index * 47 + 13) % 101) / 100) * height,
+        size: 1.4 + (index % 3) * 0.8,
+        phase: (index % 5) / 5,
       })),
-    [height, motion.particleCount, width],
+    [height, motion.particleCount, showDecorative, width],
   );
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', state => setActive(state === 'active'));
-    return () => subscription.remove();
+    const appSubscription = AppState.addEventListener('change', state => setAppActive(state === 'active'));
+    const asrSubscription = subscribeAsrActivity(setAsrActivity);
+    return () => {
+      appSubscription.remove();
+      asrSubscription();
+    };
   }, []);
 
   useEffect(() => {
     drift.stopAnimation();
     scan.stopAnimation();
-    orbit.stopAnimation();
     drift.setValue(0);
     scan.setValue(0);
-    orbit.setValue(0);
-
-    if (!ambient || !active || !motion.ambient) return;
+    if (!runAmbient) return;
 
     const driftLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(drift, {
           toValue: 1,
-          duration: Math.max(2400, Math.round(6200 * motion.durationScale)),
+          duration: Math.max(2800, Math.round(6800 * motion.durationScale)),
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(drift, {
           toValue: 0,
-          duration: Math.max(2400, Math.round(6200 * motion.durationScale)),
+          duration: Math.max(2800, Math.round(6800 * motion.durationScale)),
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
       ]),
     );
 
-    const scanLoop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(Math.round(700 * motion.durationScale)),
-        Animated.timing(scan, {
-          toValue: 1,
-          duration: Math.max(1800, Math.round(4400 * motion.durationScale)),
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scan, { toValue: 0, duration: 1, useNativeDriver: true }),
-        Animated.delay(Math.round(900 * motion.durationScale)),
-      ]),
-    );
-
-    const orbitLoop = Animated.loop(
-      Animated.timing(orbit, {
-        toValue: 1,
-        duration: Math.max(5000, Math.round(15000 * motion.durationScale)),
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-
     driftLoop.start();
-    scanLoop.start();
-    orbitLoop.start();
+
+    let scanLoop: Animated.CompositeAnimation | null = null;
+    if (motion.particleCount > 4) {
+      scanLoop = Animated.loop(
+        Animated.sequence([
+          Animated.delay(900),
+          Animated.timing(scan, {
+            toValue: 1,
+            duration: Math.max(2200, Math.round(5200 * motion.durationScale)),
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+          Animated.timing(scan, { toValue: 0, duration: 1, useNativeDriver: true }),
+          Animated.delay(1400),
+        ]),
+      );
+      scanLoop.start();
+    }
+
     return () => {
       driftLoop.stop();
-      scanLoop.stop();
-      orbitLoop.stop();
+      scanLoop?.stop();
     };
-  }, [active, ambient, drift, motion.ambient, motion.durationScale, orbit, scan]);
+  }, [drift, motion.durationScale, motion.particleCount, runAmbient, scan]);
 
-  const orbitRotation = orbit.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const reverseOrbitRotation = orbit.interpolate({ inputRange: [0, 1], outputRange: ['360deg', '0deg'] });
+  const orbitRotation = drift.interpolate({ inputRange: [0, 1], outputRange: ['-12deg', '28deg'] });
+  const reverseOrbitRotation = drift.interpolate({ inputRange: [0, 1], outputRange: ['18deg', '-20deg'] });
 
   return (
     <View style={[styles.root, style]}>
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFill} renderToHardwareTextureAndroid>
         <View style={styles.gridLayer}>
-          {Array.from({ length: 9 }, (_, index) => (
-            <View key={`h-${index}`} style={[styles.gridHorizontal, { top: `${index * 12.5}%` }]} />
-          ))}
           {Array.from({ length: 7 }, (_, index) => (
-            <View key={`v-${index}`} style={[styles.gridVertical, { left: `${index * 16.66}%` }]} />
+            <View key={`h-${index}`} style={[styles.gridHorizontal, { top: `${index * 16.66}%` }]} />
+          ))}
+          {Array.from({ length: 5 }, (_, index) => (
+            <View key={`v-${index}`} style={[styles.gridVertical, { left: `${index * 25}%` }]} />
           ))}
         </View>
 
@@ -127,13 +132,13 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
           style={[
             styles.glowPrimary,
             {
-              opacity: motion.decorative
-                ? drift.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.72] })
-                : 0.18,
+              opacity: runAmbient
+                ? drift.interpolate({ inputRange: [0, 1], outputRange: [0.22, 0.5] })
+                : 0.15,
               transform: [
-                { translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [-34, 30] }) },
-                { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [18, -30] }) },
-                { scale: drift.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1.13] }) },
+                { translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [-20, 18] }) },
+                { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [10, -16] }) },
+                { scale: drift.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.06] }) },
               ],
             },
           ]}
@@ -142,25 +147,17 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
           style={[
             styles.glowSecondary,
             {
-              opacity: motion.decorative
-                ? drift.interpolate({ inputRange: [0, 1], outputRange: [0.48, 0.16] })
-                : 0.12,
-              transform: [
-                { translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [20, -18] }) },
-                { scale: drift.interpolate({ inputRange: [0, 1], outputRange: [1.08, 0.88] }) },
-              ],
+              opacity: runAmbient
+                ? drift.interpolate({ inputRange: [0, 1], outputRange: [0.28, 0.12] })
+                : 0.09,
+              transform: [{ scale: drift.interpolate({ inputRange: [0, 1], outputRange: [1.03, 0.93] }) }],
             },
           ]}
         />
 
-        {motion.decorative ? (
+        {showDecorative ? (
           <>
-            <Animated.View
-              style={[
-                styles.orbitLarge,
-                { transform: [{ rotate: orbitRotation }, { scale: 1 + motion.intensity * 0.03 }] },
-              ]}
-            >
+            <Animated.View style={[styles.orbitLarge, { transform: [{ rotate: orbitRotation }] }]}>
               <View style={styles.orbitNodePrimary} />
               <View style={styles.orbitNodeSecondary} />
             </Animated.View>
@@ -171,7 +168,7 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
         ) : null}
 
         {particles.map((particle, index) => {
-          const phaseOffset = particle.phase * 24;
+          const phaseOffset = particle.phase * 14;
           return (
             <Animated.View
               key={`particle-${index}`}
@@ -184,23 +181,22 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
                   height: particle.size,
                   borderRadius: particle.size,
                   opacity: drift.interpolate({
-                    inputRange: [0, 0.35, 0.7, 1],
-                    outputRange: [0.15 + particle.phase * 0.3, 0.82, 0.28, 0.6],
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [0.18 + particle.phase * 0.18, 0.62, 0.25],
                   }),
                   transform: [
                     {
                       translateY: drift.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [phaseOffset, -34 - phaseOffset],
+                        outputRange: [phaseOffset, -20 - phaseOffset],
                       }),
                     },
                     {
                       translateX: drift.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [index % 2 === 0 ? -8 : 8, index % 2 === 0 ? 14 : -14],
+                        outputRange: [index % 2 === 0 ? -4 : 4, index % 2 === 0 ? 8 : -8],
                       }),
                     },
-                    { scale: drift.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.7, 1.5, 0.8] }) },
                   ],
                 },
               ]}
@@ -208,15 +204,14 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
           );
         })}
 
-        {motion.decorative ? (
+        {showDecorative && motion.particleCount > 4 ? (
           <Animated.View
             style={[
               styles.scanBeam,
               {
-                opacity: scan.interpolate({ inputRange: [0, 0.08, 0.88, 1], outputRange: [0, 0.72, 0.34, 0] }),
+                opacity: scan.interpolate({ inputRange: [0, 0.08, 0.88, 1], outputRange: [0, 0.42, 0.18, 0] }),
                 transform: [
-                  { translateY: scan.interpolate({ inputRange: [0, 1], outputRange: [-80, height + 80] }) },
-                  { skewY: '-5deg' },
+                  { translateY: scan.interpolate({ inputRange: [0, 1], outputRange: [-60, height + 60] }) },
                 ],
               },
             ]}
@@ -239,7 +234,7 @@ const styles = StyleSheet.create({
   },
   gridLayer: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.34,
+    opacity: 0.22,
   },
   gridHorizontal: {
     position: 'absolute',
@@ -257,105 +252,97 @@ const styles = StyleSheet.create({
   },
   glowPrimary: {
     position: 'absolute',
-    width: 370,
-    height: 370,
-    borderRadius: 185,
-    top: -130,
-    right: -150,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    top: -110,
+    right: -135,
     backgroundColor: techTokens.colors.glow,
   },
   glowSecondary: {
     position: 'absolute',
-    width: 330,
-    height: 330,
-    borderRadius: 165,
-    left: -175,
-    bottom: -138,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    left: -150,
+    bottom: -120,
     backgroundColor: techTokens.colors.glowSecondary,
   },
   orbitLarge: {
     position: 'absolute',
-    width: 330,
-    height: 330,
-    borderRadius: 165,
+    width: 290,
+    height: 290,
+    borderRadius: 145,
     borderWidth: 1,
-    borderColor: 'rgba(85, 217, 255, 0.10)',
-    right: -190,
-    top: 52,
+    borderColor: 'rgba(85,217,255,0.08)',
+    right: -170,
+    top: 60,
   },
   orbitSmall: {
     position: 'absolute',
-    width: 210,
-    height: 210,
-    borderRadius: 105,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
     borderWidth: 1,
-    borderColor: 'rgba(142, 124, 255, 0.12)',
-    left: -126,
-    top: '42%',
+    borderColor: 'rgba(142,124,255,0.10)',
+    left: -110,
+    top: '43%',
   },
   orbitNodePrimary: {
     position: 'absolute',
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: techTokens.colors.primary,
-    top: 39,
-    right: 54,
-    shadowColor: techTokens.colors.primary,
-    shadowOpacity: 0.95,
-    shadowRadius: 8,
-    elevation: 5,
+    top: 36,
+    right: 47,
   },
   orbitNodeSecondary: {
     position: 'absolute',
-    width: 5,
-    height: 5,
-    borderRadius: 3,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: techTokens.colors.secondary,
-    bottom: 54,
-    left: 34,
+    bottom: 48,
+    left: 31,
   },
   orbitNodeSmall: {
     position: 'absolute',
-    width: 5,
-    height: 5,
-    borderRadius: 3,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: techTokens.colors.success,
-    right: 18,
-    top: 80,
+    right: 15,
+    top: 68,
   },
   particle: {
     position: 'absolute',
     backgroundColor: techTokens.colors.primary,
-    shadowColor: techTokens.colors.primary,
-    shadowOpacity: 0.8,
-    shadowRadius: 5,
-    elevation: 2,
   },
   scanBeam: {
     position: 'absolute',
-    left: -40,
-    right: -40,
+    left: -20,
+    right: -20,
     top: 0,
-    height: 72,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(116, 229, 255, 0.52)',
-    backgroundColor: 'rgba(85, 217, 255, 0.035)',
+    height: 48,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(116,229,255,0.38)',
+    backgroundColor: 'rgba(85,217,255,0.018)',
   },
   vignetteTop: {
     position: 'absolute',
     left: 0,
     right: 0,
     top: 0,
-    height: 80,
-    backgroundColor: 'rgba(3, 8, 13, 0.22)',
+    height: 70,
+    backgroundColor: 'rgba(3,8,13,0.18)',
   },
   vignetteBottom: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    height: 90,
-    backgroundColor: 'rgba(3, 8, 13, 0.28)',
+    height: 80,
+    backgroundColor: 'rgba(3,8,13,0.22)',
   },
 });
