@@ -1,10 +1,10 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { Icon } from 'react-native-paper';
 import { techTokens } from '../../theme/tech/tokens';
 import { useVisualStyle } from '../../theme/VisualStyleProvider';
 import { useMainTabActive } from '../../navigation/MainTabActivityContext';
-import { useTechMotionPhase } from './TechMotionClock';
+import { useTechMotionValue } from './TechMotionProvider';
 
 type TechAgentCoreProps = {
   active?: boolean;
@@ -13,77 +13,97 @@ type TechAgentCoreProps = {
 };
 
 export function TechAgentCore({ active = true, compact = false, label = 'CONTEXT SYNTHESIS' }: TechAgentCoreProps) {
-  const { motion, motionLevel } = useVisualStyle();
+  const { motion } = useVisualStyle();
   const tabActive = useMainTabActive();
-  const shouldAnimate = active && tabActive && motion.ambient;
-  const phase = useTechMotionPhase(
-    shouldAnimate,
-    motionLevel === 'full' ? 22 : 13,
-    Math.max(4200, Math.round(7600 * Math.max(0.65, motion.durationScale))),
-  );
-  const pulse = (Math.sin(phase * Math.PI * 2) + 1) / 2;
+  const { phase, running } = useTechMotionValue();
   const size = compact ? 64 : 104;
   const coreSize = size * 0.48;
-  const rayProgress = (phase * 1.8) % 1;
+  const animate = active && tabActive && running && motion.ambient;
 
   return (
     <View style={[styles.root, compact && styles.rootCompact]}>
       <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-        <View
+        <Animated.View
+          renderToHardwareTextureAndroid
           style={[
             styles.outerOrbit,
             {
               width: size,
               height: size,
               borderRadius: size / 2,
-              transform: [{ rotate: shouldAnimate ? `${phase * 360}deg` : '14deg' }],
+              transform: [
+                {
+                  rotate: animate
+                    ? phase.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] })
+                    : '14deg',
+                },
+              ],
             },
           ]}
         >
           <View style={styles.nodePrimary} />
           <View style={styles.nodeSecondary} />
-        </View>
-        <View
+        </Animated.View>
+        <Animated.View
+          renderToHardwareTextureAndroid
           style={[
             styles.innerOrbit,
             {
               width: size * 0.75,
               height: size * 0.75,
               borderRadius: size * 0.375,
-              transform: [{ rotate: shouldAnimate ? `${-phase * 360}deg` : '-22deg' }],
+              transform: [
+                {
+                  rotate: animate
+                    ? phase.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-360deg'] })
+                    : '-22deg',
+                },
+              ],
             },
           ]}
         >
           <View style={styles.nodeSuccess} />
-        </View>
-        <View
+        </Animated.View>
+        <Animated.View
           style={[
             styles.core,
             {
               width: coreSize,
               height: coreSize,
               borderRadius: coreSize / 2,
-              opacity: active ? 0.78 + pulse * 0.22 : 0.62,
-              transform: [{ scale: shouldAnimate ? 0.96 + pulse * 0.08 : 1 }],
+              opacity: active
+                ? animate
+                  ? phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.78, 1, 0.78] })
+                  : 1
+                : 0.62,
+              transform: [
+                {
+                  scale: animate
+                    ? phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.96, 1.06, 0.96] })
+                    : 1,
+                },
+              ],
             },
           ]}
         >
-          <Icon
-            source="brain"
-            size={compact ? 20 : 30}
-            color={active ? techTokens.colors.primary : techTokens.colors.textMuted}
-          />
-        </View>
+          <Icon source="brain" size={compact ? 20 : 30} color={active ? techTokens.colors.primary : techTokens.colors.textMuted} />
+        </Animated.View>
         {active && motion.decorative ? (
-          <View
+          <Animated.View
             style={[
               styles.dataRay,
               {
                 width: size * 0.68,
-                opacity: shouldAnimate ? Math.max(0, 0.75 - Math.abs(rayProgress - 0.5) * 1.5) : 0.35,
+                opacity: animate
+                  ? phase.interpolate({ inputRange: [0, 0.18, 0.78, 1], outputRange: [0, 0.8, 0.3, 0] })
+                  : 0.34,
                 transform: [
                   { rotate: '-18deg' },
-                  { translateX: shouldAnimate ? -size * 0.42 + rayProgress * size * 0.84 : 0 },
+                  {
+                    translateX: animate
+                      ? phase.interpolate({ inputRange: [0, 1], outputRange: [-size * 0.36, size * 0.36] })
+                      : 0,
+                  },
                 ],
               },
             ]}
