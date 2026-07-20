@@ -7,34 +7,75 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import java.util.concurrent.Executors
 
 class SherpaAsrModule(private val reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     private val recorder = PcmRecorder(reactContext) { amplitude ->
         emitAmplitude(amplitude)
     }
     private val engine = SherpaAsrEngine(reactContext)
+    private val initExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "VoiceDiary-AsrInit").apply {
+            priority = Thread.NORM_PRIORITY - 1
+        }
+    }
+    private val initLock = Any()
+    private val pendingInitPromises = mutableListOf<Promise>()
+
+    @Volatile
     private var initialized = false
+
+    @Volatile
+    private var initializing = false
 
     override fun getName(): String = "SherpaAsr"
 
     @ReactMethod
     fun init(options: ReadableMap, promise: Promise) {
-        try {
-            val asrOptions = SherpaAsrOptions(
-                modelPath = optionalString(options, "modelPath"),
-                tokensPath = optionalString(options, "tokensPath"),
-                numThreads = if (options.hasKey("numThreads")) options.getInt("numThreads") else 2,
-                language = optionalString(options, "language").ifBlank { "auto" },
-            )
+        val asrOptions = SherpaAsrOptions(
+            modelPath = optionalString(options, "modelPath"),
+            tokensPath = optionalString(options, "tokensPath"),
+            numThreads = if (options.hasKey("numThreads")) options.getInt("numThreads") else 2,
+            language = optionalString(options, "language").ifBlank { "auto" },
+        )
 
-            engine.init(asrOptions)
-            initialized = true
-            emitState("idle", "内置 SenseVoice 模型已加载")
-            promise.resolve(null)
-        } catch (error: Throwable) {
-            initialized = false
-            emitState("error", error.message)
-            promise.reject("ASR_INIT_FAILED", error.message, error)
+        synchronized(initLock) {
+            if (initialized) {
+                promise.resolve(null)
+                return
+            }
+
+            pendingInitPromises.add(promise)
+            if (initializing) return
+            initializing = true
+        }
+
+        initExecutor.execute {
+            try {
+                engine.init(asrOptions)
+                initialized = true
+                val promises = finishInitialization()
+                reactContext.runOnJSQueueThread {
+                    emitState("idle", "内置 SenseVoice 模型已加载")
+                    promises.forEach { it.resolve(null) }
+                }
+            } catch (error: Throwable) {
+                initialized = false
+                val promises = finishInitialization()
+                reactContext.runOnJSQueueThread {
+                    emitState("error", error.message)
+                    promises.forEach { it.reject("ASR_INIT_FAILED", error.message, error) }
+                }
+            }
+        }
+    }
+
+    private fun finishInitialization(): List<Promise> {
+        return synchronized(initLock) {
+            initializing = false
+            val promises = pendingInitPromises.toList()
+            pendingInitPromises.clear()
+            promises
         }
     }
 
@@ -94,6 +135,13 @@ class SherpaAsrModule(private val reactContext: ReactApplicationContext) : React
             emitState("error", error.message)
             promise.reject("ASR_RELEASE_FAILED", error.message, error)
         }
+    }
+
+    override fun invalidate() {
+        recorder.release()
+        engine.release()
+        initExecutor.shutdownNow()
+        super.invalidate()
     }
 
     @ReactMethod
