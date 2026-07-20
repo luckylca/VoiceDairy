@@ -77,12 +77,14 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
           duration: Math.max(2800, Math.round(6800 * motion.durationScale)),
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
+          isInteraction: false,
         }),
         Animated.timing(drift, {
           toValue: 0,
           duration: Math.max(2800, Math.round(6800 * motion.durationScale)),
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
+          isInteraction: false,
         }),
       ]),
     );
@@ -99,8 +101,14 @@ export function TechScreen({ children, style, ambient = true }: TechScreenProps)
             duration: Math.max(2200, Math.round(5200 * motion.durationScale)),
             easing: Easing.linear,
             useNativeDriver: true,
+            isInteraction: false,
           }),
-          Animated.timing(scan, { toValue: 0, duration: 1, useNativeDriver: true }),
+          Animated.timing(scan, {
+            toValue: 0,
+            duration: 1,
+            useNativeDriver: true,
+            isInteraction: false,
+          }),
           Animated.delay(1400),
         ]),
       );
