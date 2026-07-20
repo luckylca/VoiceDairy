@@ -16,6 +16,7 @@ import {
 } from 'react-native-paper';
 import type {
   AppSettings,
+  CloudModelProvider,
   MotionLevel,
   OrganizerProvider,
   StartupPage,
@@ -24,14 +25,18 @@ import type {
 } from '../types/settings';
 import { defaultSettings, loadSettings, saveSettings } from '../services/settings/SettingsService';
 import { fetchAvailableModels } from '../services/llm/LlmService';
+import {
+  CLOUD_MODEL_PROVIDERS,
+  getCloudProviderPreset,
+} from '../services/llm/CloudModelProviders';
 import { getLocalModelStatus, type LocalModelStatus } from '../services/llm/LocalModelService';
 import { THEME_PRESETS, useAppTheme } from '../theme/AppThemeProvider';
 import { useVisualStyle } from '../theme/VisualStyleProvider';
-import { MotionTouchable } from '../components/MotionTouchable';
 import { useFluidNotification } from '../notifications/FluidNotificationProvider';
 import { TechScreen } from '../components/tech/TechScreen';
 import { TechPanel } from '../components/tech/TechPanel';
 import { TechButton } from '../components/tech/TechButton';
+import { TechCornerBrackets } from '../components/tech/TechMotion';
 import { techTokens } from '../theme/tech/tokens';
 
 function formatBytes(bytes: number): string {
@@ -61,7 +66,6 @@ export function SettingsScreen() {
     useCallback(() => {
       let active = true;
       setSettingsReady(false);
-
       void (async () => {
         try {
           const current = await loadSettings();
@@ -78,19 +82,18 @@ export function SettingsScreen() {
           if (active) setSettingsReady(true);
         }
       })();
-
       return () => {
         active = false;
       };
     }, []),
   );
 
+  const selectedCloudPreset = getCloudProviderPreset(settings.cloudModelProvider);
   const filteredModels = useMemo(() => {
     const keyword = modelQuery.trim().toLowerCase();
     if (!keyword) return availableModels;
     return availableModels.filter(model => model.toLowerCase().includes(keyword));
   }, [availableModels, modelQuery]);
-
   const isLocalOrganizer = settingsReady && settings.organizerProvider === 'local';
 
   function patchSettings(patch: Partial<AppSettings>) {
@@ -136,7 +139,6 @@ export function SettingsScreen() {
     setSettings(next);
     setModelDialogVisible(false);
     await saveSettings(next);
-
     if (organizerProvider === 'local') {
       try {
         setLocalModelStatus(await getLocalModelStatus());
@@ -148,13 +150,27 @@ export function SettingsScreen() {
     }
   }
 
+  async function handleCloudProviderChange(provider: CloudModelProvider) {
+    const preset = getCloudProviderPreset(provider);
+    const next: AppSettings = {
+      ...settings,
+      cloudModelProvider: provider,
+      apiBaseUrl: provider === 'custom' ? settings.apiBaseUrl : preset.baseUrl,
+      modelName: preset.suggestedModel || settings.modelName,
+    };
+    setSettings(next);
+    setAvailableModels([]);
+    setModelQuery('');
+    await saveSettings(next);
+  }
+
   async function handleSaveCloud() {
     setSavingCloud(true);
     try {
       await saveSettings({ ...settings, organizerProvider: 'cloud' });
       showNotification({
-        title: '云端 API 配置已保存',
-        message: `${settings.modelName || '未选择模型'} · ${settings.apiBaseUrl || '未填写地址'}`,
+        title: '云端模型配置已保存',
+        message: `${selectedCloudPreset.shortLabel} · ${settings.modelName || '未选择模型'}`,
         kind: 'success',
         icon: 'cloud-check-outline',
       });
@@ -170,16 +186,21 @@ export function SettingsScreen() {
       setAvailableModels(models);
       setModelQuery('');
       setModelDialogVisible(true);
-    } catch (error) {
+    } catch (caughtError) {
       showNotification({
         title: '获取模型列表失败',
-        message: error instanceof Error ? error.message : '请检查 API 地址和密钥。',
+        message: caughtError instanceof Error ? caughtError.message : '请检查供应商、API Key 和网络。',
         kind: 'error',
       });
     } finally {
       setLoadingModels(false);
     }
   }
+
+  const cloudConfigValid =
+    Boolean(settings.apiKey.trim()) &&
+    Boolean(settings.modelName.trim()) &&
+    (settings.cloudModelProvider !== 'custom' || Boolean(settings.apiBaseUrl.trim()));
 
   const content = (
     <ScrollView
@@ -205,7 +226,7 @@ export function SettingsScreen() {
         <View style={styles.choiceRow}>
           <ChoiceTile
             label="经典界面"
-            description="保留 Material Design 3"
+            description="Material Design 3"
             icon="view-dashboard-outline"
             selected={settings.visualStyle === 'classic'}
             isTech={isTech}
@@ -213,7 +234,7 @@ export function SettingsScreen() {
           />
           <ChoiceTile
             label="科技界面"
-            description="深色沉浸式数据流视觉"
+            description="动态数据流视觉"
             icon="vector-polyline"
             selected={settings.visualStyle === 'tech'}
             isTech={isTech}
@@ -330,7 +351,7 @@ export function SettingsScreen() {
 
       <SettingsSection title="智能整理" isTech={isTech}>
         <Text variant="bodySmall" style={{ color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
-          SenseVoice 始终在本地转写；这里只决定后续使用云端 API 还是本地 Qwen。
+          SenseVoice 始终在本地转写；这里只决定后续使用云端模型还是本地 Qwen。
         </Text>
         <SegmentedButtons
           value={settings.organizerProvider}
@@ -357,15 +378,43 @@ export function SettingsScreen() {
             onPress={() => navigation.navigate('LocalModelSettings')}
           />
         ) : (
-          <View style={{ marginTop: 4 }}>
-            <TextInput
-              mode="outlined"
-              label="API Base URL"
-              value={settings.apiBaseUrl}
-              onChangeText={apiBaseUrl => patchSettings({ apiBaseUrl })}
-              autoCapitalize="none"
-              style={{ marginTop: 12 }}
-            />
+          <View style={{ marginTop: 14 }}>
+            <Text variant="labelLarge" style={{ color: isTech ? techTokens.colors.text : theme.colors.onSurface, fontWeight: '900' }}>
+              模型供应商
+            </Text>
+            <View style={styles.providerGrid}>
+              {CLOUD_MODEL_PROVIDERS.map(provider => (
+                <ProviderTile
+                  key={provider.id}
+                  label={provider.shortLabel}
+                  description={provider.description}
+                  selected={settings.cloudModelProvider === provider.id}
+                  isTech={isTech}
+                  onPress={() => void handleCloudProviderChange(provider.id)}
+                />
+              ))}
+            </View>
+
+            {settings.cloudModelProvider === 'custom' ? (
+              <TextInput
+                mode="outlined"
+                label="API Base URL"
+                value={settings.apiBaseUrl}
+                onChangeText={apiBaseUrl => patchSettings({ apiBaseUrl })}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={{ marginTop: 12 }}
+              />
+            ) : (
+              <View style={[styles.fixedEndpoint, isTech && styles.fixedEndpointTech]}>
+                {isTech ? <TechCornerBrackets color="rgba(85,217,255,0.42)" /> : null}
+                <Text style={[styles.endpointCode, { color: isTech ? techTokens.colors.primary : theme.colors.primary }]}>FIXED ENDPOINT</Text>
+                <Text selectable style={{ marginTop: 4, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant, fontSize: 12 }}>
+                  {selectedCloudPreset.baseUrl}
+                </Text>
+              </View>
+            )}
+
             <TextInput
               mode="outlined"
               label="API Key"
@@ -373,6 +422,7 @@ export function SettingsScreen() {
               onChangeText={apiKey => patchSettings({ apiKey })}
               secureTextEntry
               autoCapitalize="none"
+              autoCorrect={false}
               style={{ marginTop: 12 }}
             />
             <TextInput
@@ -381,32 +431,41 @@ export function SettingsScreen() {
               value={settings.modelName}
               onChangeText={modelName => patchSettings({ modelName })}
               autoCapitalize="none"
+              autoCorrect={false}
               style={{ marginTop: 12 }}
             />
-            {isTech ? (
-              <View style={styles.inlineButtons}>
-                <TechButton
-                  label="获取模型"
-                  variant="ghost"
-                  icon="database-search-outline"
-                  disabled={loadingModels || !settings.apiBaseUrl.trim()}
-                  onPress={() => void handleFetchModels()}
-                  style={{ flex: 1 }}
-                />
-                <TechButton
-                  label="保存配置"
-                  icon="content-save-outline"
-                  disabled={savingCloud}
-                  onPress={() => void handleSaveCloud()}
-                  style={{ flex: 1 }}
-                />
-              </View>
-            ) : (
-              <View style={styles.inlineButtons}>
-                <Button mode="outlined" icon="database-search-outline" loading={loadingModels} onPress={handleFetchModels} style={{ flex: 1 }}>获取模型</Button>
-                <Button mode="contained" icon="content-save-outline" loading={savingCloud} onPress={handleSaveCloud} style={{ flex: 1 }}>保存配置</Button>
-              </View>
-            )}
+            {selectedCloudPreset.suggestedModel ? (
+              <Text style={{ marginTop: 6, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant, fontSize: 11 }}>
+                建议模型：{selectedCloudPreset.suggestedModel}
+              </Text>
+            ) : null}
+
+            <View style={styles.inlineButtons}>
+              {isTech ? (
+                <>
+                  <TechButton
+                    label={loadingModels ? '读取中' : '获取模型'}
+                    variant="ghost"
+                    icon="database-search-outline"
+                    disabled={loadingModels || !settings.apiKey.trim()}
+                    onPress={() => void handleFetchModels()}
+                    style={{ flex: 1 }}
+                  />
+                  <TechButton
+                    label={savingCloud ? '保存中' : '保存配置'}
+                    icon="content-save-outline"
+                    disabled={savingCloud || !cloudConfigValid}
+                    onPress={() => void handleSaveCloud()}
+                    style={{ flex: 1 }}
+                  />
+                </>
+              ) : (
+                <>
+                  <Button mode="outlined" icon="database-search-outline" loading={loadingModels} disabled={!settings.apiKey.trim()} onPress={handleFetchModels} style={{ flex: 1 }}>获取模型</Button>
+                  <Button mode="contained" icon="content-save-outline" loading={savingCloud} disabled={!cloudConfigValid} onPress={handleSaveCloud} style={{ flex: 1 }}>保存配置</Button>
+                </>
+              )}
+            </View>
           </View>
         )}
 
@@ -499,7 +558,6 @@ function SettingsSection({ title, isTech, children }: SettingsSectionProps) {
       </TechPanel>
     );
   }
-
   return (
     <View style={[styles.classicCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}>
       <Text variant="titleMedium" style={{ fontWeight: '900' }}>{title}</Text>
@@ -522,228 +580,116 @@ function ChoiceTile({ label, description, icon, selected, isTech, onPress }: Cho
   return (
     <Pressable
       onPress={onPress}
-      style={[
+      style={({ pressed }) => [
         styles.choiceTile,
         {
+          opacity: pressed ? 0.78 : 1,
           borderColor: selected
-            ? isTech
-              ? techTokens.colors.primary
-              : theme.colors.primary
-            : isTech
-              ? techTokens.colors.line
-              : theme.colors.outlineVariant,
+            ? isTech ? techTokens.colors.primary : theme.colors.primary
+            : isTech ? techTokens.colors.line : theme.colors.outlineVariant,
           backgroundColor: selected
-            ? isTech
-              ? 'rgba(85, 217, 255, 0.10)'
-              : theme.colors.secondaryContainer
-            : isTech
-              ? 'rgba(255,255,255,0.02)'
-              : theme.colors.surfaceVariant,
+            ? isTech ? 'rgba(85,217,255,0.10)' : theme.colors.secondaryContainer
+            : isTech ? 'rgba(255,255,255,0.025)' : theme.colors.surfaceVariant,
         },
       ]}
     >
-      <Icon source={icon} size={25} color={selected ? (isTech ? techTokens.colors.primary : theme.colors.primary) : (isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant)} />
-      <Text variant="titleSmall" style={{ marginTop: 8, fontWeight: '900', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>{label}</Text>
-      <Text variant="bodySmall" style={{ marginTop: 4, lineHeight: 18, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>{description}</Text>
+      {isTech ? <TechCornerBrackets color={selected ? techTokens.colors.primary : 'rgba(119,193,221,0.32)'} /> : null}
+      <Icon source={icon} size={24} color={selected ? (isTech ? techTokens.colors.primary : theme.colors.primary) : (isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant)} />
+      <Text style={{ marginTop: 8, fontWeight: '900', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>{label}</Text>
+      <Text style={{ marginTop: 3, fontSize: 11, textAlign: 'center', color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>{description}</Text>
     </Pressable>
   );
 }
 
-function CompactChoice({
-  label,
-  selected,
-  isTech,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  isTech: boolean;
-  onPress: () => void;
-}) {
+function CompactChoice({ label, selected, isTech, onPress }: { label: string; selected: boolean; isTech: boolean; onPress: () => void }) {
   const theme = useTheme();
   return (
     <Pressable
       onPress={onPress}
-      style={[
+      style={({ pressed }) => [
         styles.compactChoice,
         {
+          opacity: pressed ? 0.72 : 1,
           borderColor: selected ? (isTech ? techTokens.colors.primary : theme.colors.primary) : (isTech ? techTokens.colors.line : theme.colors.outlineVariant),
-          backgroundColor: selected ? (isTech ? 'rgba(85,217,255,0.10)' : theme.colors.primaryContainer) : 'transparent',
+          backgroundColor: selected ? (isTech ? 'rgba(85,217,255,0.12)' : theme.colors.secondaryContainer) : 'transparent',
         },
       ]}
     >
-      <Text variant="labelMedium" style={{ fontWeight: '800', color: selected ? (isTech ? techTokens.colors.primary : theme.colors.onPrimaryContainer) : (isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant) }}>{label}</Text>
+      <Text style={{ color: selected ? (isTech ? techTokens.colors.primary : theme.colors.primary) : (isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant), fontWeight: '800', fontSize: 12 }}>{label}</Text>
     </Pressable>
   );
 }
 
-function SettingSwitchRow({
-  title,
-  description,
-  value,
-  isTech,
-  onValueChange,
-}: {
-  title: string;
-  description: string;
-  value: boolean;
-  isTech: boolean;
-  onValueChange: (value: boolean) => void;
-}) {
+function ProviderTile({ label, description, selected, isTech, onPress }: { label: string; description: string; selected: boolean; isTech: boolean; onPress: () => void }) {
   const theme = useTheme();
   return (
-    <View style={[styles.switchRow, { borderTopColor: isTech ? techTokens.colors.line : theme.colors.outlineVariant }]}>
-      <View style={{ flex: 1, paddingRight: 12 }}>
-        <Text variant="titleSmall" style={{ fontWeight: '800', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>{title}</Text>
-        <Text variant="bodySmall" style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>{description}</Text>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.providerTile,
+        {
+          opacity: pressed ? 0.74 : 1,
+          borderColor: selected ? (isTech ? techTokens.colors.primary : theme.colors.primary) : (isTech ? techTokens.colors.line : theme.colors.outlineVariant),
+          backgroundColor: selected ? (isTech ? 'rgba(85,217,255,0.10)' : theme.colors.secondaryContainer) : (isTech ? 'rgba(255,255,255,0.02)' : theme.colors.surfaceVariant),
+        },
+      ]}
+    >
+      {isTech ? <View style={[styles.providerSignal, { backgroundColor: selected ? techTokens.colors.success : techTokens.colors.textMuted }]} /> : null}
+      <Text style={{ color: isTech ? techTokens.colors.text : theme.colors.onSurface, fontWeight: '900', fontSize: 13 }}>{label}</Text>
+      <Text numberOfLines={2} style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant, fontSize: 9, lineHeight: 13 }}>{description}</Text>
+    </Pressable>
+  );
+}
+
+function SettingSwitchRow({ title, description, value, isTech, onValueChange }: { title: string; description: string; value: boolean; isTech: boolean; onValueChange: (value: boolean) => void }) {
+  const theme = useTheme();
+  return (
+    <View style={styles.switchRow}>
+      <View style={{ flex: 1, marginRight: 12 }}>
+        <Text style={{ color: isTech ? techTokens.colors.text : theme.colors.onSurface, fontWeight: '800' }}>{title}</Text>
+        <Text style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant, fontSize: 12 }}>{description}</Text>
       </View>
-      <Switch value={value} onValueChange={onValueChange} color={isTech ? techTokens.colors.primary : theme.colors.primary} />
+      <Switch value={value} onValueChange={onValueChange} />
     </View>
   );
 }
 
-function SettingsLink({
-  icon,
-  title,
-  description,
-  isTech,
-  onPress,
-}: {
-  icon: string;
-  title: string;
-  description: string;
-  isTech: boolean;
-  onPress: () => void;
-}) {
+function SettingsLink({ icon, title, description, isTech, onPress }: { icon: string; title: string; description: string; isTech: boolean; onPress: () => void }) {
   const theme = useTheme();
   return (
-    <MotionTouchable
-      onPress={onPress}
-      borderRadius={16}
-      style={{ marginTop: 10 }}
-      contentStyle={[
-        styles.managementItem,
-        {
-          backgroundColor: isTech ? 'rgba(255,255,255,0.025)' : theme.colors.surfaceVariant,
-          borderColor: isTech ? techTokens.colors.line : 'transparent',
-        },
-      ]}
-    >
-      <View style={styles.settingRow}>
-        <View style={[styles.rowIcon, { backgroundColor: isTech ? 'rgba(85,217,255,0.09)' : theme.colors.secondaryContainer }]}>
-          <Icon source={icon} size={23} color={isTech ? techTokens.colors.primary : theme.colors.onSecondaryContainer} />
-        </View>
-        <View style={styles.rowText}>
-          <Text variant="titleSmall" style={{ fontWeight: '900', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>{title}</Text>
-          <Text variant="bodySmall" style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>{description}</Text>
-        </View>
-        <Icon source="chevron-right" size={22} color={isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant} />
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1, borderBottomColor: isTech ? techTokens.colors.line : theme.colors.outlineVariant }]}>
+      <View style={[styles.linkIcon, { backgroundColor: isTech ? 'rgba(85,217,255,0.08)' : theme.colors.secondaryContainer }]}>
+        <Icon source={icon} size={21} color={isTech ? techTokens.colors.primary : theme.colors.primary} />
       </View>
-    </MotionTouchable>
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={{ color: isTech ? techTokens.colors.text : theme.colors.onSurface, fontWeight: '800' }}>{title}</Text>
+        <Text style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant, fontSize: 12 }}>{description}</Text>
+      </View>
+      <Icon source="chevron-right" size={22} color={isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant} />
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    padding: 16,
-    paddingTop: 20,
-    paddingBottom: 48,
-  },
-  classicCard: {
-    marginTop: 14,
-    padding: 16,
-    borderRadius: 22,
-    borderWidth: 1,
-  },
-  techSectionTitle: {
-    color: techTokens.colors.text,
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: 0.3,
-  },
-  choiceRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  choiceTile: {
-    flex: 1,
-    minHeight: 132,
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 13,
-  },
-  subheading: {
-    marginTop: 18,
-    marginBottom: 9,
-    fontWeight: '900',
-  },
-  compactChoices: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  compactChoice: {
-    minWidth: 78,
-    minHeight: 38,
-    paddingHorizontal: 13,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  switchRow: {
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  paletteRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  paletteItem: {
-    width: '18%',
-    minWidth: 59,
-    borderRadius: 15,
-    borderWidth: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  colorSwatch: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  managementItem: {
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  rowIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowText: {
-    flex: 1,
-    minWidth: 0,
-    marginLeft: 12,
-    marginRight: 8,
-  },
-  inlineButtons: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
-  },
+  content: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 120 },
+  classicCard: { marginTop: 14, borderRadius: 22, borderWidth: 1, padding: 16 },
+  techSectionTitle: { color: techTokens.colors.primary, fontSize: 11, fontWeight: '900', letterSpacing: 1.1 },
+  choiceRow: { flexDirection: 'row', gap: 10 },
+  choiceTile: { flex: 1, minHeight: 116, borderWidth: 1, borderRadius: 16, padding: 13, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  subheading: { marginTop: 18, marginBottom: 9, fontWeight: '900' },
+  compactChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  compactChoice: { minHeight: 36, paddingHorizontal: 13, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  paletteRow: { marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  paletteItem: { width: 72, minHeight: 70, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  colorSwatch: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  providerGrid: { marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  providerTile: { width: '48.5%', minHeight: 74, borderWidth: 1, borderRadius: 14, paddingHorizontal: 11, paddingVertical: 10, overflow: 'hidden' },
+  providerSignal: { position: 'absolute', right: 8, top: 8, width: 5, height: 5, borderRadius: 3 },
+  fixedEndpoint: { marginTop: 12, borderWidth: 1, borderRadius: 14, padding: 12 },
+  fixedEndpointTech: { borderColor: techTokens.colors.line, backgroundColor: 'rgba(4,18,27,0.76)', overflow: 'hidden' },
+  endpointCode: { fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  inlineButtons: { marginTop: 14, flexDirection: 'row', gap: 10 },
+  switchRow: { minHeight: 66, marginTop: 8, flexDirection: 'row', alignItems: 'center' },
+  linkRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
+  linkIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
 });
