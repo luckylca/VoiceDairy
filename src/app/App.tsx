@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StatusBar } from 'react-native';
+import { Linking, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from '../navigation/RootNavigator';
 import { AppThemeProvider, useAppTheme } from '../theme/AppThemeProvider';
@@ -9,6 +9,18 @@ import { TechMotionProvider } from '../components/tech/TechMotionProvider';
 import { TechTapEffectsProvider } from '../components/tech/TechTapEffectsProvider';
 import { techTokens } from '../theme/tech/tokens';
 import { prewarmAsr } from '../services/asr/AsrService';
+import { loadSettings, subscribeSettings } from '../services/settings/SettingsService';
+import { syncDailyNotifications } from '../services/notifications/DailyNotificationService';
+import { openMainTab } from '../navigation/MainTabController';
+import { requestQuickRecordStart } from '../services/records/QuickRecordCommandService';
+
+function handleAppUrl(url: string | null): void {
+  if (!url) return;
+  if (url.startsWith('voicediary://record')) {
+    openMainTab('record');
+    if (/[?&]autostart=1(?:&|$)/.test(url)) requestQuickRecordStart();
+  }
+}
 
 function AppContent() {
   const { theme, isDark } = useAppTheme();
@@ -19,7 +31,19 @@ function AppContent() {
       void prewarmAsr({ numThreads: 2, language: 'auto' });
     }, 850);
 
-    return () => clearTimeout(timer);
+    void loadSettings().then(settings => syncDailyNotifications(settings, false));
+    const unsubscribeSettings = subscribeSettings(settings => {
+      void syncDailyNotifications(settings, false);
+    });
+
+    void Linking.getInitialURL().then(handleAppUrl);
+    const linkingSubscription = Linking.addEventListener('url', event => handleAppUrl(event.url));
+
+    return () => {
+      clearTimeout(timer);
+      unsubscribeSettings();
+      linkingSubscription.remove();
+    };
   }, []);
 
   return (
