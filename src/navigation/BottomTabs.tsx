@@ -30,6 +30,10 @@ const tabs: TabDefinition[] = [
   { name: 'settings', label: '设置', activeIcon: 'cog', inactiveIcon: 'cog-outline', code: 'SYS' },
 ];
 
+function clampPage(index: number): number {
+  return Math.max(0, Math.min(tabs.length - 1, index));
+}
+
 const ClassicTab = memo(function ClassicTab({
   tab,
   focused,
@@ -40,6 +44,7 @@ const ClassicTab = memo(function ClassicTab({
   onPress: () => void;
 }) {
   const theme = useTheme();
+
   return (
     <View style={styles.tabSlot}>
       <TouchableRipple
@@ -130,11 +135,11 @@ function ScreenSlot({ active, children }: { active: boolean; children: React.Rea
 
 export function BottomTabs() {
   const theme = useTheme();
-  const { isTech, motionLevel } = useVisualStyle();
+  const { isTech } = useVisualStyle();
   const pagerRef = useRef<PagerView>(null);
   const activeIndexRef = useRef(0);
+  const visualIndexRef = useRef(0);
   const draggingRef = useRef(false);
-  const programmaticTargetRef = useRef<number | null>(null);
   const pageProgress = useRef(new Animated.Value(0)).current;
   const [activeIndex, setActiveIndex] = useState(0);
   const [visualIndex, setVisualIndex] = useState(0);
@@ -149,62 +154,60 @@ export function BottomTabs() {
   });
 
   const setVisualIndexSafe = useCallback((index: number) => {
-    if (index < 0 || index >= tabs.length) return;
-    setVisualIndex(previous => (previous === index ? previous : index));
+    const next = clampPage(index);
+    if (visualIndexRef.current === next) return;
+    visualIndexRef.current = next;
+    setVisualIndex(next);
   }, []);
 
   const commitIndex = useCallback(
     (index: number, persist = true) => {
-      if (index < 0 || index >= tabs.length) return;
-      const changed = index !== activeIndexRef.current;
-      activeIndexRef.current = index;
-      setActiveIndex(previous => (previous === index ? previous : index));
-      setVisualIndexSafe(index);
+      const next = clampPage(index);
+      const changed = next !== activeIndexRef.current;
+      activeIndexRef.current = next;
+      setActiveIndex(previous => (previous === next ? previous : next));
+      setVisualIndexSafe(next);
       if (changed && persist) {
-        void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[index]?.name ?? 'record');
+        void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[next]?.name ?? 'record');
       }
     },
     [setVisualIndexSafe],
   );
 
   const openPage = useCallback(
-    (index: number, animate = motionLevel !== 'off') => {
-      if (index < 0 || index >= tabs.length) return;
-      if (index === activeIndexRef.current && !paging) {
-        setVisualIndexSafe(index);
-        pageProgress.setValue(index);
+    (index: number) => {
+      const next = clampPage(index);
+      if (next === activeIndexRef.current) {
+        pageProgress.setValue(next);
+        setVisualIndexSafe(next);
         return;
       }
 
-      // Click feedback is immediate, but the real selected page is committed only
-      // by onPageSelected. This avoids intermediate selected events when jumping
-      // across multiple pages from moving the indicator back and forth.
-      setVisualIndexSafe(index);
-      if (animate) {
-        programmaticTargetRef.current = index;
-        setPaging(true);
-        pagerRef.current?.setPage(index);
-      } else {
-        programmaticTargetRef.current = null;
-        pageProgress.setValue(index);
-        commitIndex(index);
-        pagerRef.current?.setPageWithoutAnimation(index);
-      }
+      // Tab presses are navigation commands, not swipe gestures. Jump directly to the
+      // already-mounted page so the response is immediate even when moving 2–3 tabs.
+      draggingRef.current = false;
+      setPaging(false);
+      pageProgress.setValue(next);
+      commitIndex(next);
+      pagerRef.current?.setPageWithoutAnimation(next);
     },
-    [commitIndex, motionLevel, pageProgress, paging, setVisualIndexSafe],
+    [commitIndex, pageProgress, setVisualIndexSafe],
   );
 
   const handlePageScroll = useCallback(
     (event: any) => {
       const position = Number(event.nativeEvent.position ?? 0);
       const offset = Number(event.nativeEvent.offset ?? 0);
-      pageProgress.setValue(position + offset);
+      const progress = Math.max(0, Math.min(tabs.length - 1, position + offset));
 
-      // Do not change the icon selection during a gesture. The moving track already
-      // follows the finger continuously; changing icons from raw offset values caused
-      // left/right flicker when the gesture slowed down, reversed, or bounced back.
+      pageProgress.setValue(progress);
+
+      if (!draggingRef.current) return;
+      // The selected icon follows whichever page currently occupies most of the screen.
+      // This is the only visual-selection write during a finger gesture.
+      setVisualIndexSafe(Math.round(progress));
     },
-    [pageProgress],
+    [pageProgress, setVisualIndexSafe],
   );
 
   useEffect(() => {
@@ -226,7 +229,6 @@ export function BottomTabs() {
 
       if (targetIndex > 0) {
         requestAnimationFrame(() => {
-          programmaticTargetRef.current = null;
           pageProgress.setValue(targetIndex);
           commitIndex(targetIndex, false);
           pagerRef.current?.setPageWithoutAnimation(targetIndex);
@@ -243,14 +245,14 @@ export function BottomTabs() {
         ref={pagerRef}
         style={styles.pagesContainer}
         initialPage={0}
-        offscreenPageLimit={1}
+        // Keep all four native pages attached. Their expensive ambient work is still
+        // gated by MainTabActivityProvider, but tab presses never wait for page creation.
+        offscreenPageLimit={3}
         overdrag={false}
         onPageScroll={handlePageScroll}
         onPageScrollStateChanged={event => {
           const state = event.nativeEvent.pageScrollState;
           if (state === 'dragging') {
-            // A real finger gesture takes ownership from any unfinished tab click.
-            programmaticTargetRef.current = null;
             draggingRef.current = true;
             setPaging(true);
             return;
@@ -259,21 +261,12 @@ export function BottomTabs() {
           if (state === 'idle') {
             draggingRef.current = false;
             setPaging(false);
-            if (programmaticTargetRef.current === null) {
-              pageProgress.setValue(activeIndexRef.current);
-              setVisualIndexSafe(activeIndexRef.current);
-            }
+            pageProgress.setValue(activeIndexRef.current);
+            setVisualIndexSafe(activeIndexRef.current);
           }
         }}
         onPageSelected={event => {
-          const index = event.nativeEvent.position;
-          const programmaticTarget = programmaticTargetRef.current;
-
-          // setPage can emit selected events for pages crossed on the way to a
-          // non-adjacent target. Ignore those events and commit only the requested page.
-          if (programmaticTarget !== null && index !== programmaticTarget) return;
-          if (programmaticTarget === index) programmaticTargetRef.current = null;
-
+          const index = clampPage(event.nativeEvent.position);
           pageProgress.setValue(index);
           commitIndex(index);
           if (!draggingRef.current) setPaging(false);
