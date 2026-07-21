@@ -73,8 +73,18 @@ function TapBurst({
         style={[
           styles.ring,
           {
-            opacity: progress.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.75, 0.24, 0] }),
-            transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.28, 1.35] }) }],
+            opacity: progress.interpolate({
+              inputRange: [0, 0.7, 1],
+              outputRange: [0.75, 0.24, 0],
+            }),
+            transform: [
+              {
+                scale: progress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.28, 1.35],
+                }),
+              },
+            ],
           },
         ]}
       />
@@ -88,11 +98,29 @@ function TapBurst({
               height: particle.size,
               borderRadius: particle.size,
               backgroundColor: particle.color,
-              opacity: progress.interpolate({ inputRange: [0, 0.72, 1], outputRange: [0.9, 0.76, 0] }),
+              opacity: progress.interpolate({
+                inputRange: [0, 0.72, 1],
+                outputRange: [0.9, 0.76, 0],
+              }),
               transform: [
-                { translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, particle.x] }) },
-                { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [0, particle.y] }) },
-                { scale: progress.interpolate({ inputRange: [0, 0.35, 1], outputRange: [0.4, 1, 0.2] }) },
+                {
+                  translateX: progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, particle.x],
+                  }),
+                },
+                {
+                  translateY: progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, particle.y],
+                  }),
+                },
+                {
+                  scale: progress.interpolate({
+                    inputRange: [0, 0.35, 1],
+                    outputRange: [0.4, 1, 0.2],
+                  }),
+                },
               ],
             },
           ]}
@@ -107,10 +135,22 @@ export function TechTapEffectsProvider({ children }: { children: React.ReactNode
   const [bursts, setBursts] = useState<Burst[]>([]);
   const nextId = useRef(1);
   const touch = useRef<TouchOrigin | null>(null);
+  const pendingFrame = useRef<number | null>(null);
 
-  const enabled = isTech && motion.decorative && motionLevel !== 'reduced' && motionLevel !== 'off';
+  const enabled =
+    isTech &&
+    motion.decorative &&
+    motionLevel !== 'reduced' &&
+    motionLevel !== 'off';
   const particleCount = motionLevel === 'full' ? 7 : 5;
   const maxBursts = motionLevel === 'full' ? 4 : 3;
+
+  useEffect(
+    () => () => {
+      if (pendingFrame.current !== null) cancelAnimationFrame(pendingFrame.current);
+    },
+    [],
+  );
 
   function readPoint(event: GestureResponderEvent) {
     return { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
@@ -126,17 +166,30 @@ export function TechTapEffectsProvider({ children }: { children: React.ReactNode
     const origin = touch.current;
     if (!origin || origin.moved) return;
     const point = readPoint(event);
-    if (Math.hypot(point.x - origin.x, point.y - origin.y) > 10) origin.moved = true;
+    if (Math.hypot(point.x - origin.x, point.y - origin.y) > 10) {
+      origin.moved = true;
+    }
   }
 
   function handleTouchEnd(event: GestureResponderEvent) {
     const origin = touch.current;
     touch.current = null;
     if (!enabled || !origin || origin.moved || Date.now() - origin.startedAt > 650) return;
+
     const point = readPoint(event);
-    setBursts(current => {
-      if (current.length >= maxBursts) return current;
-      return [...current, { id: nextId.current++, x: point.x, y: point.y }];
+    const burst: Burst = { id: nextId.current++, x: point.x, y: point.y };
+
+    // The parent touch handler fires in the same gesture cycle as a button's onPress.
+    // Updating the application-wide burst list synchronously can make navigation wait
+    // for a decorative render. Defer the burst by one frame so the real button action
+    // and native PagerView command always run first.
+    if (pendingFrame.current !== null) cancelAnimationFrame(pendingFrame.current);
+    pendingFrame.current = requestAnimationFrame(() => {
+      pendingFrame.current = null;
+      setBursts(current => {
+        if (current.length >= maxBursts) return current;
+        return [...current, burst];
+      });
     });
   }
 
