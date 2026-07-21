@@ -132,24 +132,25 @@ export function BottomTabs() {
     }
   }, [commitIndex, motionLevel, pageOffset, pagePosition, setVisualIndexSafe]);
 
-  const onPageScroll = useMemo(
-    () => Animated.event(
-      [{ nativeEvent: { position: pagePosition, offset: pageOffset } }],
-      {
-        useNativeDriver: true,
-        listener: (event: any) => {
-          if (!draggingRef.current) return;
-          const { position, offset } = event.nativeEvent as { position: number; offset: number };
-          const origin = dragOriginRef.current;
-          let preview = origin;
-          if (origin === position && offset > FORWARD_PREVIEW_THRESHOLD) preview = Math.min(tabs.length - 1, origin + 1);
-          else if (origin === position + 1 && offset < BACKWARD_PREVIEW_THRESHOLD) preview = Math.max(0, origin - 1);
-          setVisualIndexSafe(preview);
-        },
-      },
-    ),
-    [pageOffset, pagePosition, setVisualIndexSafe],
-  );
+  const handlePageScroll = useCallback((event: any) => {
+    const position = Number(event.nativeEvent.position ?? 0);
+    const offset = Number(event.nativeEvent.offset ?? 0);
+
+    // PagerView requires a real JS function here. Animated.event is an object in
+    // the installed PagerView/RN combination and crashes Hermes at runtime.
+    pagePosition.setValue(position);
+    pageOffset.setValue(offset);
+
+    if (!draggingRef.current) return;
+    const origin = dragOriginRef.current;
+    let preview = origin;
+    if (origin === position && offset > FORWARD_PREVIEW_THRESHOLD) {
+      preview = Math.min(tabs.length - 1, origin + 1);
+    } else if (origin === position + 1 && offset < BACKWARD_PREVIEW_THRESHOLD) {
+      preview = Math.max(0, origin - 1);
+    }
+    setVisualIndexSafe(preview);
+  }, [pageOffset, pagePosition, setVisualIndexSafe]);
 
   useEffect(() => {
     const unsubscribe = subscribeMainTab(tab => {
@@ -179,14 +180,14 @@ export function BottomTabs() {
   }, [commitIndex, openPage, pageOffset, pagePosition]);
 
   return (
-    <View style={[styles.root, { backgroundColor: isTech ? techTokens.colors.background : theme.colors.background }]}>
+    <View style={[styles.root, { backgroundColor: isTech ? techTokens.colors.background : theme.colors.background }]}> 
       <PagerView
         ref={pagerRef}
         style={styles.pagesContainer}
         initialPage={0}
         offscreenPageLimit={1}
         overdrag={false}
-        onPageScroll={onPageScroll}
+        onPageScroll={handlePageScroll}
         onPageScrollStateChanged={event => {
           const state = event.nativeEvent.pageScrollState;
           if (state === 'dragging') {
@@ -200,7 +201,10 @@ export function BottomTabs() {
           }
         }}
         onPageSelected={event => {
-          commitIndex(event.nativeEvent.position);
+          const index = event.nativeEvent.position;
+          pagePosition.setValue(index);
+          pageOffset.setValue(0);
+          commitIndex(index);
           if (!draggingRef.current) setPaging(false);
         }}
       >
