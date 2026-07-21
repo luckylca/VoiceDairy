@@ -1,5 +1,5 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PagerView from 'react-native-pager-view';
 import { Icon, Text, TouchableRipple, useTheme } from 'react-native-paper';
@@ -24,104 +24,157 @@ type TabDefinition = {
 };
 
 const tabs: TabDefinition[] = [
-  { name: 'record', label: '记录', activeIcon: 'microphone', inactiveIcon: 'microphone-outline', code: 'REC' },
-  { name: 'timeline', label: '时间线', activeIcon: 'clock', inactiveIcon: 'clock-outline', code: 'TIME' },
-  { name: 'agent', label: 'Agent', activeIcon: 'message-processing', inactiveIcon: 'message-processing-outline', code: 'AI' },
-  { name: 'settings', label: '设置', activeIcon: 'cog', inactiveIcon: 'cog-outline', code: 'SYS' },
+  {
+    name: 'record',
+    label: '记录',
+    activeIcon: 'microphone',
+    inactiveIcon: 'microphone-outline',
+    code: 'REC',
+  },
+  {
+    name: 'timeline',
+    label: '时间线',
+    activeIcon: 'clock',
+    inactiveIcon: 'clock-outline',
+    code: 'TIME',
+  },
+  {
+    name: 'agent',
+    label: 'Agent',
+    activeIcon: 'message-processing',
+    inactiveIcon: 'message-processing-outline',
+    code: 'AI',
+  },
+  {
+    name: 'settings',
+    label: '设置',
+    activeIcon: 'cog',
+    inactiveIcon: 'cog-outline',
+    code: 'SYS',
+  },
 ];
+
+function withAlpha(color: string, alpha: string): string {
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? `${color}${alpha}` : color;
+}
 
 function clampPage(index: number): number {
   return Math.max(0, Math.min(tabs.length - 1, index));
 }
 
-const ClassicTab = memo(function ClassicTab({
+const BottomNavItem = memo(function BottomNavItem({
   tab,
   focused,
+  isTech,
   onPress,
 }: {
   tab: TabDefinition;
   focused: boolean;
+  isTech: boolean;
   onPress: () => void;
 }) {
   const theme = useTheme();
+  const progress = useRef(new Animated.Value(focused ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: focused ? 1 : 0,
+      duration: 130,
+      useNativeDriver: true,
+      isInteraction: false,
+    }).start();
+  }, [focused, progress]);
+
+  const iconScale = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.08],
+  });
+  const indicatorScale = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.35, 1],
+  });
+  const focusedColor = isTech ? techTokens.colors.primary : theme.colors.onSecondaryContainer;
+  const unfocusedColor = isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant;
 
   return (
-    <View style={styles.tabSlot}>
+    <View style={styles.tabItemSlot}>
       <TouchableRipple
         onPress={onPress}
+        borderless={false}
+        rippleColor={
+          isTech
+            ? 'rgba(85,217,255,0.20)'
+            : withAlpha(theme.colors.primary, '2E')
+        }
         accessibilityRole="tab"
         accessibilityState={{ selected: focused }}
         accessibilityLabel={tab.label}
         style={[
-          styles.classicTab,
-          { backgroundColor: focused ? theme.colors.secondaryContainer : 'transparent' },
+          styles.tabItem,
+          isTech ? styles.techTabItem : styles.classicTabItem,
+          {
+            backgroundColor: focused
+              ? isTech
+                ? 'rgba(85,217,255,0.075)'
+                : theme.colors.secondaryContainer
+              : 'transparent',
+            borderColor: isTech && focused
+              ? 'rgba(85,217,255,0.25)'
+              : 'transparent',
+          },
         ]}
       >
-        <View style={styles.tabContent}>
-          <Icon
-            source={focused ? tab.activeIcon : tab.inactiveIcon}
-            size={focused ? 24 : 23}
-            color={focused ? theme.colors.onSecondaryContainer : theme.colors.onSurfaceVariant}
-          />
+        <View style={styles.tabItemContent}>
+          <Animated.View
+            style={[
+              styles.iconShell,
+              isTech && styles.techIconShell,
+              isTech && focused && styles.techIconShellFocused,
+              { transform: [{ scale: iconScale }] },
+            ]}
+          >
+            <Icon
+              source={focused ? tab.activeIcon : tab.inactiveIcon}
+              size={24}
+              color={focused ? focusedColor : unfocusedColor}
+            />
+            {isTech && focused ? <View style={styles.iconSignalDot} /> : null}
+          </Animated.View>
+
           <Text
             variant="labelSmall"
             style={{
               marginTop: 2,
               fontWeight: '800',
-              color: focused ? theme.colors.onSecondaryContainer : theme.colors.onSurfaceVariant,
+              color: focused
+                ? isTech
+                  ? techTokens.colors.text
+                  : theme.colors.onSecondaryContainer
+                : unfocusedColor,
             }}
           >
             {tab.label}
           </Text>
+
+          {isTech ? (
+            <Text style={[styles.techCode, focused && styles.techCodeFocused]}>
+              {tab.code}
+            </Text>
+          ) : null}
+
+          <Animated.View
+            style={[
+              styles.indicator,
+              {
+                opacity: progress,
+                backgroundColor: isTech ? techTokens.colors.primary : theme.colors.primary,
+                transform: [{ scaleX: indicatorScale }],
+              },
+            ]}
+          />
         </View>
       </TouchableRipple>
     </View>
-  );
-});
-
-const TechTab = memo(function TechTab({
-  tab,
-  focused,
-  onPress,
-}: {
-  tab: TabDefinition;
-  focused: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityState={{ selected: focused }}
-      accessibilityLabel={tab.label}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.techTab,
-        focused && styles.techTabFocused,
-        pressed && styles.techTabPressed,
-      ]}
-    >
-      <View style={[styles.tabContent, focused && styles.tabContentFocused]}>
-        <View style={[styles.techIconShell, focused && styles.techIconShellFocused]}>
-          <Icon
-            source={focused ? tab.activeIcon : tab.inactiveIcon}
-            size={focused ? 23 : 22}
-            color={focused ? techTokens.colors.primary : techTokens.colors.textMuted}
-          />
-          {focused ? <View style={styles.iconSignalDot} /> : null}
-        </View>
-        <Text
-          variant="labelSmall"
-          style={{
-            marginTop: 2,
-            color: focused ? techTokens.colors.text : techTokens.colors.textMuted,
-            fontWeight: focused ? '900' : '700',
-          }}
-        >
-          {tab.label}
-        </Text>
-        <Text style={[styles.techCode, focused && styles.techCodeFocused]}>{tab.code}</Text>
-      </View>
-    </Pressable>
   );
 });
 
@@ -138,86 +191,40 @@ export function BottomTabs() {
   const { isTech } = useVisualStyle();
   const pagerRef = useRef<PagerView>(null);
   const activeIndexRef = useRef(0);
-  const visualIndexRef = useRef(0);
-  const draggingRef = useRef(false);
-  const pageProgress = useRef(new Animated.Value(0)).current;
+  const receivedNavigationCommandRef = useRef(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [visualIndex, setVisualIndex] = useState(0);
-  const [paging, setPaging] = useState(false);
-  const [tabBarWidth, setTabBarWidth] = useState(0);
 
-  const slotWidth = tabBarWidth > 0 ? (tabBarWidth - 16) / tabs.length : 0;
-  const trackTranslateX = pageProgress.interpolate({
-    inputRange: [0, tabs.length - 1],
-    outputRange: [0, slotWidth * (tabs.length - 1)],
-    extrapolate: 'clamp',
-  });
-
-  const setVisualIndexSafe = useCallback((index: number) => {
+  const commitSelectedPage = useCallback((index: number, persist = true) => {
     const next = clampPage(index);
-    if (visualIndexRef.current === next) return;
-    visualIndexRef.current = next;
-    setVisualIndex(next);
+    const changed = activeIndexRef.current !== next;
+    activeIndexRef.current = next;
+    setActiveIndex(previous => (previous === next ? previous : next));
+    if (changed && persist) {
+      void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[next]?.name ?? 'record');
+    }
   }, []);
 
-  const commitIndex = useCallback(
-    (index: number, persist = true) => {
-      const next = clampPage(index);
-      const changed = next !== activeIndexRef.current;
-      activeIndexRef.current = next;
-      setActiveIndex(previous => (previous === next ? previous : next));
-      setVisualIndexSafe(next);
-      if (changed && persist) {
-        void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[next]?.name ?? 'record');
-      }
-    },
-    [setVisualIndexSafe],
-  );
+  const openPage = useCallback((index: number) => {
+    const next = clampPage(index);
+    if (next === activeIndexRef.current) return;
 
-  const openPage = useCallback(
-    (index: number) => {
-      const next = clampPage(index);
-      if (next === activeIndexRef.current) {
-        pageProgress.setValue(next);
-        setVisualIndexSafe(next);
-        return;
-      }
-
-      // Tab presses are navigation commands, not swipe gestures. Jump directly to the
-      // already-mounted page so the response is immediate even when moving 2–3 tabs.
-      draggingRef.current = false;
-      setPaging(false);
-      pageProgress.setValue(next);
-      commitIndex(next);
-      pagerRef.current?.setPageWithoutAnimation(next);
-    },
-    [commitIndex, pageProgress, setVisualIndexSafe],
-  );
-
-  const handlePageScroll = useCallback(
-    (event: any) => {
-      const position = Number(event.nativeEvent.position ?? 0);
-      const offset = Number(event.nativeEvent.offset ?? 0);
-      const progress = Math.max(0, Math.min(tabs.length - 1, position + offset));
-
-      pageProgress.setValue(progress);
-
-      if (!draggingRef.current) return;
-      // The selected icon follows whichever page currently occupies most of the screen.
-      // This is the only visual-selection write during a finger gesture.
-      setVisualIndexSafe(Math.round(progress));
-    },
-    [pageProgress, setVisualIndexSafe],
-  );
+    // This is intentionally the same interaction pattern used before the technology
+    // theme existed: send the command straight to the native pager and let
+    // onPageSelected become the single source of truth for the selected tab.
+    pagerRef.current?.setPage(next);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = subscribeMainTab(tab => {
+      receivedNavigationCommandRef.current = true;
       const index = tabs.findIndex(item => item.name === tab);
       if (index >= 0) openPage(index);
     });
 
     void (async () => {
       const settings = await loadSettings();
+      if (receivedNavigationCommandRef.current) return;
+
       let targetIndex = 0;
       if (settings.startupPage === 'agent') {
         targetIndex = tabs.findIndex(tab => tab.name === 'agent');
@@ -229,163 +236,142 @@ export function BottomTabs() {
 
       if (targetIndex > 0) {
         requestAnimationFrame(() => {
-          pageProgress.setValue(targetIndex);
-          commitIndex(targetIndex, false);
           pagerRef.current?.setPageWithoutAnimation(targetIndex);
+          commitSelectedPage(targetIndex, false);
         });
       }
     })();
 
     return unsubscribe;
-  }, [commitIndex, openPage, pageProgress]);
+  }, [commitSelectedPage, openPage]);
+
+  const pages = useMemo(
+    () => [
+      <View key="record" collapsable={false} style={styles.page}>
+        <ScreenSlot active={activeIndex === 0}>
+          <QuickRecordScreen />
+        </ScreenSlot>
+      </View>,
+      <View key="timeline" collapsable={false} style={styles.page}>
+        <ScreenSlot active={activeIndex === 1}>
+          <HomeScreen />
+        </ScreenSlot>
+      </View>,
+      <View key="agent" collapsable={false} style={styles.page}>
+        <ScreenSlot active={activeIndex === 2}>
+          <AgentScreen />
+        </ScreenSlot>
+      </View>,
+      <View key="settings" collapsable={false} style={styles.page}>
+        <ScreenSlot active={activeIndex === 3}>
+          <SettingsScreen />
+        </ScreenSlot>
+      </View>,
+    ],
+    [activeIndex],
+  );
 
   return (
-    <View style={[styles.root, { backgroundColor: isTech ? techTokens.colors.background : theme.colors.background }]}>
+    <View
+      style={[
+        styles.root,
+        { backgroundColor: isTech ? techTokens.colors.background : theme.colors.background },
+      ]}
+    >
       <PagerView
         ref={pagerRef}
-        style={styles.pagesContainer}
+        style={styles.pager}
         initialPage={0}
-        // Keep all four native pages attached. Their expensive ambient work is still
-        // gated by MainTabActivityProvider, but tab presses never wait for page creation.
-        offscreenPageLimit={3}
-        overdrag={false}
-        onPageScroll={handlePageScroll}
-        onPageScrollStateChanged={event => {
-          const state = event.nativeEvent.pageScrollState;
-          if (state === 'dragging') {
-            draggingRef.current = true;
-            setPaging(true);
-            return;
-          }
-
-          if (state === 'idle') {
-            draggingRef.current = false;
-            setPaging(false);
-            pageProgress.setValue(activeIndexRef.current);
-            setVisualIndexSafe(activeIndexRef.current);
-          }
-        }}
-        onPageSelected={event => {
-          const index = clampPage(event.nativeEvent.position);
-          pageProgress.setValue(index);
-          commitIndex(index);
-          if (!draggingRef.current) setPaging(false);
-        }}
+        orientation="horizontal"
+        scrollEnabled
+        overScrollMode="never"
+        pageMargin={0}
+        offscreenPageLimit={1}
+        onPageSelected={event => commitSelectedPage(event.nativeEvent.position)}
       >
-        <View key="record" collapsable={false} style={styles.page}>
-          <ScreenSlot active={activeIndex === 0 && !paging}><QuickRecordScreen /></ScreenSlot>
-        </View>
-        <View key="timeline" collapsable={false} style={styles.page}>
-          <ScreenSlot active={activeIndex === 1 && !paging}><HomeScreen /></ScreenSlot>
-        </View>
-        <View key="agent" collapsable={false} style={styles.page}>
-          <ScreenSlot active={activeIndex === 2 && !paging}><AgentScreen /></ScreenSlot>
-        </View>
-        <View key="settings" collapsable={false} style={styles.page}>
-          <ScreenSlot active={activeIndex === 3 && !paging}><SettingsScreen /></ScreenSlot>
-        </View>
+        {pages}
       </PagerView>
 
       <View
-        onLayout={event => setTabBarWidth(event.nativeEvent.layout.width)}
         style={[
           styles.tabBar,
           isTech
             ? styles.techTabBar
-            : { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outlineVariant },
+            : {
+                backgroundColor: theme.colors.surface,
+                borderTopColor: theme.colors.outlineVariant,
+              },
         ]}
       >
-        {isTech && slotWidth > 0 ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.techMovingTrack,
-              {
-                width: Math.max(0, slotWidth - 4),
-                transform: [{ translateX: trackTranslateX }],
-              },
-            ]}
-          >
-            <View style={styles.techMovingGlow} />
-            <View style={styles.techMovingLine} />
-          </Animated.View>
-        ) : null}
-
-        {tabs.map((tab, index) =>
-          isTech ? (
-            <TechTab key={tab.name} tab={tab} focused={visualIndex === index} onPress={() => openPage(index)} />
-          ) : (
-            <ClassicTab key={tab.name} tab={tab} focused={visualIndex === index} onPress={() => openPage(index)} />
-          ),
-        )}
+        {tabs.map((tab, index) => (
+          <BottomNavItem
+            key={tab.name}
+            tab={tab}
+            focused={activeIndex === index}
+            isTech={isTech}
+            onPress={() => openPage(index)}
+          />
+        ))}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  pagesContainer: { flex: 1 },
-  page: { flex: 1 },
+  root: {
+    flex: 1,
+  },
+  pager: {
+    flex: 1,
+  },
+  page: {
+    flex: 1,
+  },
   tabBar: {
     height: 72,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 5,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   techTabBar: {
     height: 78,
-    paddingHorizontal: 8,
     paddingTop: 5,
     paddingBottom: 6,
     borderTopColor: 'rgba(85,217,255,0.28)',
     backgroundColor: 'rgba(2,9,14,0.985)',
+  },
+  tabItemSlot: {
+    flex: 1,
+    height: '100%',
+    paddingHorizontal: 3,
+  },
+  tabItem: {
+    flex: 1,
     overflow: 'hidden',
   },
-  tabSlot: { flex: 1, height: '100%', paddingHorizontal: 2 },
-  classicTab: { flex: 1, borderRadius: 18, overflow: 'hidden' },
-  tabContent: { zIndex: 2, flex: 1, alignItems: 'center', justifyContent: 'center' },
-  tabContentFocused: { transform: [{ translateY: -1 }] },
-  techTab: { flex: 1, height: '100%', marginHorizontal: 2, borderRadius: 15, overflow: 'hidden' },
-  techTabFocused: { backgroundColor: 'rgba(85,217,255,0.018)' },
-  techTabPressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
-  techMovingTrack: {
-    position: 'absolute',
-    left: 10,
-    top: 5,
-    bottom: 6,
+  classicTabItem: {
+    borderRadius: 20,
+    borderWidth: 0,
+  },
+  techTabItem: {
     borderRadius: 15,
     borderWidth: 1,
-    borderColor: 'rgba(85,217,255,0.24)',
-    backgroundColor: 'rgba(85,217,255,0.045)',
-    overflow: 'hidden',
   },
-  techMovingGlow: {
-    position: 'absolute',
-    left: '24%',
-    right: '24%',
-    top: -10,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(85,217,255,0.09)',
-  },
-  techMovingLine: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 0,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: techTokens.colors.primary,
-  },
-  techIconShell: {
-    width: 36,
-    height: 29,
-    borderRadius: 10,
+  tabItemContent: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  iconShell: {
+    width: 36,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  techIconShell: {
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'transparent',
   },
@@ -395,12 +381,18 @@ const styles = StyleSheet.create({
   },
   iconSignalDot: {
     position: 'absolute',
-    right: 4,
-    top: 3,
+    right: 3,
+    top: 2,
     width: 4,
     height: 4,
     borderRadius: 2,
     backgroundColor: techTokens.colors.success,
+  },
+  indicator: {
+    width: 24,
+    height: 3,
+    borderRadius: 2,
+    marginTop: 3,
   },
   techCode: {
     marginTop: 1,
@@ -409,5 +401,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.55,
   },
-  techCodeFocused: { color: techTokens.colors.primary },
+  techCodeFocused: {
+    color: techTokens.colors.primary,
+  },
 });
