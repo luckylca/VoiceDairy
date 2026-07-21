@@ -11,7 +11,7 @@ import {
 import { ActivityIndicator, Button, Icon, Text, TextInput, useTheme } from 'react-native-paper';
 import type { AgentAction, AgentMessage, ActionExecutionResult } from '../types/agent';
 import type { AppSettings } from '../types/settings';
-import { defaultSettings, loadSettings } from '../services/settings/SettingsService';
+import { defaultSettings, loadSettings, subscribeSettings } from '../services/settings/SettingsService';
 import { organizeText } from '../services/llm/LlmService';
 import {
   initAsr,
@@ -121,19 +121,25 @@ export function AgentScreen() {
   }, [replaceMessages]);
 
   useEffect(() => {
+    let active = true;
     void (async () => {
       const [savedMessages, currentSettings] = await Promise.all([
         loadCurrentAgentSession(),
         loadSettings(),
       ]);
+      if (!active) return;
       setMessages(savedMessages);
       setSettings(currentSettings);
       await importDraft();
     })();
 
-    return subscribeAgentDraft(() => {
-      void importDraft();
-    });
+    const unsubscribeDraft = subscribeAgentDraft(() => void importDraft());
+    const unsubscribeSettings = subscribeSettings(next => setSettings(next));
+    return () => {
+      active = false;
+      unsubscribeDraft();
+      unsubscribeSettings();
+    };
   }, [importDraft]);
 
   useEffect(() => {
@@ -181,7 +187,7 @@ export function AgentScreen() {
       setInput(result.text);
       showNotification({
         title: '语音已转为文字',
-        message: '默认不会自动发送，你可以修改后再提交。',
+        message: settings.agentAutoSendVoice ? '正在自动发送给 Agent。' : '文字已经放入输入框，你可以修改后再发送。',
         kind: 'success',
         icon: 'text-box-check-outline',
       });
@@ -305,51 +311,39 @@ export function AgentScreen() {
     const completed = action.status === 'success';
     const cancelled = action.status === 'cancelled';
 
+    const buttons = !completed && !cancelled ? (
+      <View style={styles.actionButtons}>
+        {isTech ? (
+          <>
+            <TechButton label={executing ? '执行中' : '确认'} icon={executing ? 'progress-clock' : 'check'} disabled={executing} onPress={() => void confirmAction(messageId, action)} style={{ flex: 1 }} />
+            <TechButton label="取消" icon="close" variant="ghost" disabled={executing} onPress={() => updateAction(messageId, action.id, { status: 'cancelled' })} style={{ flex: 1 }} />
+          </>
+        ) : (
+          <>
+            <Button mode="contained" loading={executing} disabled={executing} onPress={() => void confirmAction(messageId, action)} style={{ flex: 1 }}>确认</Button>
+            <Button mode="outlined" disabled={executing} onPress={() => updateAction(messageId, action.id, { status: 'cancelled' })} style={{ flex: 1 }}>取消</Button>
+          </>
+        )}
+      </View>
+    ) : null;
+
     if (isTech) {
       return (
         <TechPanel key={action.id} index={index + 1} accent style={{ marginTop: 10 }}>
           <View style={styles.actionHeader}>
             <Text style={styles.techActionType}>{actionTypeLabel(action).toUpperCase()}</Text>
-            <Text style={[styles.techActionStatus, completed && { color: techTokens.colors.success }]}>
-              {actionStatusLabel(action)}
-            </Text>
+            <Text style={[styles.techActionStatus, completed && { color: techTokens.colors.success }]}>{actionStatusLabel(action)}</Text>
           </View>
           <Text style={styles.techActionTitle}>{action.title}</Text>
           <Text style={styles.techActionDescription}>{action.description}</Text>
           {action.projectName ? <Text style={styles.techActionMeta}>PROJECT / {action.projectName}</Text> : null}
-          {action.datetime || action.dueDate ? (
-            <Text style={[styles.techActionMeta, { color: techTokens.colors.warning }]}>TIME / {action.datetime ?? action.dueDate}</Text>
-          ) : null}
+          {action.datetime || action.dueDate ? <Text style={[styles.techActionMeta, { color: techTokens.colors.warning }]}>TIME / {action.datetime ?? action.dueDate}</Text> : null}
           <View style={styles.confidenceRow}>
             <Text style={styles.confidenceText}>CONFIDENCE {Math.round(action.confidence * 100)}%</Text>
-            <View style={styles.confidenceTrack}>
-              <View style={[styles.confidenceFill, { width: `${Math.round(action.confidence * 100)}%` }]} />
-            </View>
+            <View style={styles.confidenceTrack}><View style={[styles.confidenceFill, { width: `${Math.round(action.confidence * 100)}%` }]} /></View>
           </View>
-          {executionResult ? (
-            <Text style={[styles.techResult, { color: executionResult.success ? techTokens.colors.success : techTokens.colors.error }]}>
-              {executionResult.message}
-            </Text>
-          ) : null}
-          {!completed && !cancelled ? (
-            <View style={styles.actionButtons}>
-              <TechButton
-                label={executing ? '执行中' : '确认'}
-                icon={executing ? 'progress-clock' : 'check'}
-                disabled={executing}
-                onPress={() => void confirmAction(messageId, action)}
-                style={{ flex: 1 }}
-              />
-              <TechButton
-                label="取消"
-                icon="close"
-                variant="ghost"
-                disabled={executing}
-                onPress={() => updateAction(messageId, action.id, { status: 'cancelled' })}
-                style={{ flex: 1 }}
-              />
-            </View>
-          ) : null}
+          {executionResult ? <Text style={[styles.techResult, { color: executionResult.success ? techTokens.colors.success : techTokens.colors.error }]}>{executionResult.message}</Text> : null}
+          {buttons}
         </TechPanel>
       );
     }
@@ -363,50 +357,24 @@ export function AgentScreen() {
         <Text variant="titleMedium" style={{ marginTop: 8, fontWeight: '900' }}>{action.title}</Text>
         <Text variant="bodyMedium" style={{ marginTop: 5, color: theme.colors.onSurfaceVariant }}>{action.description}</Text>
         {executionResult ? <Text variant="bodySmall" style={{ marginTop: 8, color: executionResult.success ? theme.colors.primary : theme.colors.error }}>{executionResult.message}</Text> : null}
-        {!completed && !cancelled ? (
-          <View style={styles.actionButtons}>
-            <Button mode="contained" loading={executing} disabled={executing} onPress={() => void confirmAction(messageId, action)} style={{ flex: 1 }}>确认</Button>
-            <Button mode="outlined" disabled={executing} onPress={() => updateAction(messageId, action.id, { status: 'cancelled' })} style={{ flex: 1 }}>取消</Button>
-          </View>
-        ) : null}
+        {buttons}
       </View>
     );
   }
 
   const voiceBars = Array.from({ length: 12 }, (_, index) => {
     const source = voiceLevels[voiceLevels.length - 12 + index] ?? 0.03;
-    return (
-      <View
-        key={index}
-        style={[
-          styles.inputVoiceBar,
-          {
-            height: 4 + source * 19,
-            backgroundColor: source > 0.6 ? techTokens.colors.success : techTokens.colors.primary,
-          },
-        ]}
-      />
-    );
+    return <View key={index} style={[styles.inputVoiceBar, { height: 4 + source * 19, backgroundColor: source > 0.6 ? techTokens.colors.success : techTokens.colors.primary }]} />;
   });
 
   const inputBar = isTech ? (
     <View style={styles.techInputBar}>
-      <Pressable
-        onPress={() => void handleVoiceInput()}
-        style={({ pressed }) => [
-          styles.voiceButton,
-          recording && styles.voiceButtonRecording,
-          pressed && { opacity: 0.72, transform: [{ scale: 0.96 }] },
-        ]}
-      >
+      <Pressable onPress={() => void handleVoiceInput()} style={({ pressed }) => [styles.voiceButton, recording && styles.voiceButtonRecording, pressed && styles.pressed]}>
         <Icon source={recording ? 'stop' : 'microphone-outline'} size={23} color={recording ? techTokens.colors.error : techTokens.colors.primary} />
       </Pressable>
       <View style={styles.inputModule}>
         {recording ? (
-          <View style={styles.inputWave}>
-            {voiceBars}
-            <Text style={styles.inputLevel}>{Math.round(amplitude * 100)}%</Text>
-          </View>
+          <View style={styles.inputWave}>{voiceBars}<Text style={styles.inputLevel}>{Math.round(amplitude * 100)}%</Text></View>
         ) : (
           <NativeTextInput
             multiline
@@ -414,32 +382,29 @@ export function AgentScreen() {
             onChangeText={setInput}
             placeholder="输入消息或补充信息"
             placeholderTextColor={techTokens.colors.textMuted}
+            textAlignVertical="center"
             style={styles.techMessageInput}
             editable={!sending}
           />
         )}
       </View>
-      <Pressable
-        disabled={sending || recording || !input.trim()}
-        onPress={() => void handleSend()}
-        style={({ pressed }) => [styles.sendButton, (!input.trim() || sending || recording) && { opacity: 0.35 }, pressed && { transform: [{ scale: 0.95 }] }]}
-      >
+      <Pressable disabled={sending || recording || !input.trim()} onPress={() => void handleSend()} style={({ pressed }) => [styles.sendButton, (!input.trim() || sending || recording) && styles.disabled, pressed && styles.pressed]}>
         <TechCornerBrackets color="rgba(3,8,13,0.45)" />
         <Icon source="send" size={22} color={techTokens.colors.backgroundDeep} />
       </Pressable>
     </View>
   ) : (
     <View style={[styles.classicInputBar, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}>
-      <Button compact icon={recording ? 'stop' : 'microphone-outline'} textColor={recording ? theme.colors.error : theme.colors.primary} onPress={() => void handleVoiceInput()}>
-        {recording ? '停止' : ''}
-      </Button>
+      <Button compact icon={recording ? 'stop' : 'microphone-outline'} textColor={recording ? theme.colors.error : theme.colors.primary} onPress={() => void handleVoiceInput()}>{recording ? '停止' : ''}</Button>
       <TextInput
         mode="outlined"
         multiline
+        dense
         value={input}
         onChangeText={setInput}
         placeholder={recording ? '正在录音…' : '输入消息'}
-        style={{ flex: 1, maxHeight: 120 }}
+        style={styles.classicMessageInput}
+        contentStyle={styles.classicMessageInputContent}
         disabled={sending || recording}
       />
       <Button mode="contained" icon="send" disabled={sending || recording || !input.trim()} onPress={() => void handleSend()} style={{ marginLeft: 8 }}>发送</Button>
@@ -457,9 +422,7 @@ export function AgentScreen() {
         <View style={styles.emptyState}>
           {isTech ? <TechAgentCore active={false} label="AGENT READY" /> : <Icon source="message-processing-outline" size={44} color={theme.colors.primary} />}
           <Text style={[styles.emptyTitle, { color: isTech ? techTokens.colors.text : theme.colors.onSurface }]}>VoiceDiary Agent</Text>
-          <Text style={[styles.emptyBody, { color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }]}>
-            描述想法、待办、提醒或项目进展。系统会先生成结构化操作，只有你确认后才写入数据。
-          </Text>
+          <Text style={[styles.emptyBody, { color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }]}>描述想法、待办、提醒或项目进展。系统会先生成结构化操作，只有你确认后才写入数据。</Text>
         </View>
       }
       renderItem={({ item, index }) => {
@@ -467,26 +430,10 @@ export function AgentScreen() {
         const bubble = (
           <View style={{ marginTop: 12 }}>
             <View style={[styles.messageRow, { justifyContent: isUser ? 'flex-end' : 'flex-start' }]}>
-              <View
-                style={[
-                  styles.bubble,
-                  isTech && styles.techBubble,
-                  {
-                    backgroundColor: isTech
-                      ? isUser ? 'rgba(85,217,255,0.13)' : 'rgba(13,32,44,0.90)'
-                      : isUser ? theme.colors.primaryContainer : theme.colors.surface,
-                    borderColor: isTech
-                      ? isUser ? 'rgba(85,217,255,0.45)' : techTokens.colors.line
-                      : theme.colors.outlineVariant,
-                  },
-                ]}
-              >
+              <View style={[styles.bubble, isTech && styles.techBubble, { backgroundColor: isTech ? isUser ? 'rgba(85,217,255,0.13)' : 'rgba(13,32,44,0.90)' : isUser ? theme.colors.primaryContainer : theme.colors.surface, borderColor: isTech ? isUser ? 'rgba(85,217,255,0.45)' : techTokens.colors.line : theme.colors.outlineVariant }]}>
                 {isTech ? <TechCornerBrackets color={isUser ? techTokens.colors.primary : techTokens.colors.secondary} /> : null}
                 <Text style={{ color: isTech ? techTokens.colors.text : theme.colors.onSurface, lineHeight: 22, zIndex: 2 }}>{item.content}</Text>
-                <Text variant="labelSmall" style={{ marginTop: 7, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant, zIndex: 2 }}>
-                  {new Date(item.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                  {item.source === 'voice' ? ' · VOICE' : ''}
-                </Text>
+                <Text variant="labelSmall" style={{ marginTop: 7, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant, zIndex: 2 }}>{new Date(item.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}{item.source === 'voice' ? ' · VOICE' : ''}</Text>
               </View>
             </View>
             {item.actions?.map((action, actionIndex) => renderActionCard(item.id, action, actionIndex))}
@@ -494,16 +441,7 @@ export function AgentScreen() {
         );
         return isTech ? <TechEntrance index={Math.min(index, 8)} from={isUser ? 'right' : 'left'}>{bubble}</TechEntrance> : bubble;
       }}
-      ListFooterComponent={
-        sending ? (
-          <View style={isTech ? styles.techThinkingRow : styles.thinkingRow}>
-            {isTech ? <TechAgentCore active compact /> : <ActivityIndicator size={18} />}
-            <Text style={{ marginLeft: 9, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
-              正在理解内容并生成待确认操作…
-            </Text>
-          </View>
-        ) : null
-      }
+      ListFooterComponent={sending ? <View style={isTech ? styles.techThinkingRow : styles.thinkingRow}>{isTech ? <TechAgentCore active compact /> : <ActivityIndicator size={18} />}<Text style={{ marginLeft: 9, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>正在理解内容并生成待确认操作…</Text></View> : null}
     />
   );
 
@@ -513,9 +451,7 @@ export function AgentScreen() {
         {isTech ? <TechAgentCore active={sending} compact /> : null}
         <View style={{ flex: 1, marginLeft: isTech ? 8 : 0 }}>
           <Text variant="titleLarge" style={{ fontWeight: '900', color: isTech ? techTokens.colors.text : theme.colors.onSurface }}>Agent</Text>
-          <Text variant="bodySmall" style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>
-            {isTech ? 'CONTEXT ONLINE · CONFIRM BEFORE EXECUTE' : '先预览，确认后执行'}
-          </Text>
+          <Text variant="bodySmall" style={{ marginTop: 3, color: isTech ? techTokens.colors.textMuted : theme.colors.onSurfaceVariant }}>{isTech ? 'CONTEXT ONLINE · CONFIRM BEFORE EXECUTE' : '先预览，确认后执行'}</Text>
         </View>
         <Button compact onPress={() => void clearSession()} disabled={sending || messages.length === 0} textColor={isTech ? techTokens.colors.textMuted : undefined}>清空</Button>
       </View>
@@ -524,9 +460,7 @@ export function AgentScreen() {
     </KeyboardAvoidingView>
   );
 
-  return isTech
-    ? <TechScreen ambient>{content}</TechScreen>
-    : <View style={{ flex: 1, backgroundColor: theme.colors.background }}>{content}</View>;
+  return isTech ? <TechScreen ambient>{content}</TechScreen> : <View style={{ flex: 1, backgroundColor: theme.colors.background }}>{content}</View>;
 }
 
 const styles = StyleSheet.create({
@@ -553,14 +487,18 @@ const styles = StyleSheet.create({
   techResult: { marginTop: 9, fontSize: 13, lineHeight: 19 },
   thinkingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16 },
   techThinkingRow: { minHeight: 80, marginTop: 12, borderRadius: 18, borderWidth: 1, borderColor: techTokens.colors.line, backgroundColor: 'rgba(7,23,32,0.80)', paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center' },
-  techInputBar: { borderTopWidth: 1, borderTopColor: techTokens.colors.line, backgroundColor: 'rgba(3,11,17,0.98)', paddingHorizontal: 10, paddingTop: 9, paddingBottom: 11, flexDirection: 'row', alignItems: 'flex-end' },
+  techInputBar: { borderTopWidth: 1, borderTopColor: techTokens.colors.line, backgroundColor: 'rgba(3,11,17,0.98)', paddingHorizontal: 10, paddingTop: 9, paddingBottom: 11, flexDirection: 'row', alignItems: 'center' },
   voiceButton: { width: 46, height: 46, borderRadius: 15, borderWidth: 1, borderColor: techTokens.colors.line, backgroundColor: 'rgba(85,217,255,0.04)', alignItems: 'center', justifyContent: 'center' },
   voiceButtonRecording: { borderColor: techTokens.colors.error, backgroundColor: 'rgba(255,111,125,0.08)' },
-  inputModule: { flex: 1, minHeight: 46, maxHeight: 120, marginHorizontal: 9 },
-  techMessageInput: { minHeight: 46, maxHeight: 120, paddingHorizontal: 13, paddingVertical: 11, borderRadius: 15, borderWidth: 1, borderColor: techTokens.colors.line, backgroundColor: 'rgba(15,35,47,0.82)', color: techTokens.colors.text, fontSize: 15 },
+  inputModule: { flex: 1, minHeight: 46, maxHeight: 120, marginHorizontal: 9, justifyContent: 'center' },
+  techMessageInput: { minHeight: 46, maxHeight: 120, paddingHorizontal: 13, paddingTop: 0, paddingBottom: 0, borderRadius: 15, borderWidth: 1, borderColor: techTokens.colors.line, backgroundColor: 'rgba(15,35,47,0.82)', color: techTokens.colors.text, fontSize: 15, lineHeight: 20, includeFontPadding: false },
   inputWave: { height: 46, paddingHorizontal: 11, borderRadius: 15, borderWidth: 1, borderColor: techTokens.colors.line, backgroundColor: 'rgba(15,35,47,0.82)', flexDirection: 'row', alignItems: 'center', gap: 3 },
   inputVoiceBar: { width: 3, minHeight: 3, borderRadius: 2 },
   inputLevel: { marginLeft: 'auto', color: techTokens.colors.primary, fontSize: 9, fontWeight: '900', fontVariant: ['tabular-nums'] },
   sendButton: { width: 46, height: 46, borderRadius: 15, backgroundColor: techTokens.colors.primary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  classicInputBar: { borderTopWidth: 1, paddingHorizontal: 10, paddingTop: 9, paddingBottom: 11, flexDirection: 'row', alignItems: 'flex-end' },
+  classicInputBar: { borderTopWidth: 1, paddingHorizontal: 10, paddingTop: 9, paddingBottom: 11, flexDirection: 'row', alignItems: 'center' },
+  classicMessageInput: { flex: 1, minHeight: 48, maxHeight: 120 },
+  classicMessageInputContent: { minHeight: 46, paddingVertical: 0, textAlignVertical: 'center' },
+  pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
+  disabled: { opacity: 0.35 },
 });
