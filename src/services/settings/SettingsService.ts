@@ -30,6 +30,12 @@ export const defaultSettings: AppSettings = {
   startupPage: 'quick_record',
   autoOrganizeAfterRecognition: false,
   agentAutoSendVoice: false,
+  dailyPlanEnabled: false,
+  dailyPlanTime: '08:00',
+  dailyReviewEnabled: false,
+  dailyReviewTime: '21:30',
+  persistentQuickRecordNotification: true,
+  conflictDetectionEnabled: true,
 };
 
 function normalizeVisualStyle(value: unknown): VisualStyle {
@@ -58,6 +64,18 @@ function normalizeCloudModelProvider(value: unknown, baseUrl: string): CloudMode
   return allowed.includes(value as CloudModelProvider)
     ? (value as CloudModelProvider)
     : inferCloudModelProvider(baseUrl);
+}
+
+function normalizeTime(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return fallback;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return fallback;
+  }
+  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 }
 
 export async function loadSettings(): Promise<AppSettings> {
@@ -93,6 +111,12 @@ export async function loadSettings(): Promise<AppSettings> {
       startupPage: normalizeStartupPage(saved.startupPage),
       autoOrganizeAfterRecognition: saved.autoOrganizeAfterRecognition === true,
       agentAutoSendVoice: saved.agentAutoSendVoice === true,
+      dailyPlanEnabled: saved.dailyPlanEnabled === true,
+      dailyPlanTime: normalizeTime(saved.dailyPlanTime, defaultSettings.dailyPlanTime),
+      dailyReviewEnabled: saved.dailyReviewEnabled === true,
+      dailyReviewTime: normalizeTime(saved.dailyReviewTime, defaultSettings.dailyReviewTime),
+      persistentQuickRecordNotification: saved.persistentQuickRecordNotification !== false,
+      conflictDetectionEnabled: saved.conflictDetectionEnabled !== false,
     };
   } catch {
     return defaultSettings;
