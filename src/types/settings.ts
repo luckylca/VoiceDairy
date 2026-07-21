@@ -33,4 +33,10 @@ export type AppSettings = {
   startupPage: StartupPage;
   autoOrganizeAfterRecognition: boolean;
   agentAutoSendVoice: boolean;
+  dailyPlanEnabled: boolean;
+  dailyPlanTime: string;
+  dailyReviewEnabled: boolean;
+  dailyReviewTime: string;
+  persistentQuickRecordNotification: boolean;
+  conflictDetectionEnabled: boolean;
 };
