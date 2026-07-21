@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRoute, type RouteProp } from '@react-navigation/native';
 import { ActivityIndicator, Button, Icon, Text, useTheme } from 'react-native-paper';
@@ -24,63 +24,35 @@ export function DailyAgentScreen() {
   const theme = useTheme();
   const { isTech } = useVisualStyle();
   const { showNotification } = useFluidNotification();
+  const initialMode = route.params?.mode ?? 'plan';
+  const modeRef = useRef<DailyAgentMode>(initialMode);
+  const generationRequestRef = useRef(0);
+  const autoStartedRef = useRef<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-  const [mode, setMode] = useState<DailyAgentMode>(route.params?.mode ?? 'plan');
+  const [mode, setMode] = useState<DailyAgentMode>(initialMode);
   const [result, setResult] = useState<DailyAgentResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const autoStartedRef = React.useRef<string | null>(null);
 
-  const loadCurrent = useCallback(async (nextMode: DailyAgentMode) => {
+  const applySavedResult = useCallback(async (nextMode: DailyAgentMode, requestId?: number) => {
     const saved = await loadDailyAgentResult(nextMode);
+    if (requestId !== undefined && requestId !== generationRequestRef.current) return null;
+    if (modeRef.current !== nextMode) return null;
     setResult(saved);
     return saved;
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      void (async () => {
-        const nextSettings = await loadSettings();
-        if (!active) return;
-        setSettings(nextSettings);
-        const saved = await loadCurrent(mode);
-        if (!active || saved || nextSettings.organizerProvider !== 'cloud' || !nextSettings.apiKey.trim()) return;
-        const autoKey = `${mode}:${new Date().toDateString()}`;
-        if (autoStartedRef.current === autoKey) return;
-        autoStartedRef.current = autoKey;
-        requestAnimationFrame(() => void generate(nextSettings, mode, true));
-      })();
-      const unsubscribe = subscribeSettings(next => active && setSettings(next));
-      return () => {
-        active = false;
-        unsubscribe();
-      };
-    }, [loadCurrent, mode]),
-  );
-
-  useEffect(() => {
-    const nextMode = route.params?.mode;
-    if (nextMode && nextMode !== mode) setMode(nextMode);
-  }, [mode, route.params?.mode]);
-
-  async function switchMode(nextMode: DailyAgentMode) {
-    if (nextMode === mode) return;
-    setMode(nextMode);
-    setErrorMessage('');
-    setResult(await loadDailyAgentResult(nextMode));
-  }
-
-  async function generate(
-    currentSettings = settings,
-    currentMode = mode,
+  const generate = useCallback(async (
+    currentSettings: AppSettings,
+    currentMode: DailyAgentMode,
     silent = false,
-  ) {
-    if (loading) return;
+  ) => {
+    const requestId = ++generationRequestRef.current;
     setLoading(true);
     setErrorMessage('');
     try {
       const next = await generateDailyAgentResult(currentMode, currentSettings);
+      if (requestId !== generationRequestRef.current || modeRef.current !== currentMode) return;
       setResult(next);
       if (!silent) {
         showNotification({
@@ -91,14 +63,64 @@ export function DailyAgentScreen() {
         });
       }
     } catch (caughtError) {
+      if (requestId !== generationRequestRef.current || modeRef.current !== currentMode) return;
       const message = caughtError instanceof Error ? caughtError.message : '每日 Agent 生成失败，请重试。';
       setErrorMessage(message);
-      if (!silent) {
-        showNotification({ title: '每日 Agent 生成失败', message, kind: 'error' });
-      }
+      if (!silent) showNotification({ title: '每日 Agent 生成失败', message, kind: 'error' });
     } finally {
-      setLoading(false);
+      if (requestId === generationRequestRef.current) setLoading(false);
     }
+  }, [showNotification]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const focusedMode = modeRef.current;
+      const requestId = generationRequestRef.current;
+      void (async () => {
+        const nextSettings = await loadSettings();
+        if (!active || requestId !== generationRequestRef.current) return;
+        setSettings(nextSettings);
+        const saved = await applySavedResult(focusedMode, requestId);
+        if (
+          !active ||
+          saved ||
+          modeRef.current !== focusedMode ||
+          nextSettings.organizerProvider !== 'cloud' ||
+          !nextSettings.apiKey.trim()
+        ) return;
+        const autoKey = `${focusedMode}:${new Date().toDateString()}`;
+        if (autoStartedRef.current === autoKey) return;
+        autoStartedRef.current = autoKey;
+        requestAnimationFrame(() => void generate(nextSettings, focusedMode, true));
+      })();
+      const unsubscribe = subscribeSettings(next => active && setSettings(next));
+      return () => {
+        active = false;
+        unsubscribe();
+      };
+    }, [applySavedResult, generate]),
+  );
+
+  async function switchMode(nextMode: DailyAgentMode) {
+    if (nextMode === modeRef.current) return;
+
+    // Cancel any result that is still being generated for the previous mode.
+    generationRequestRef.current += 1;
+    modeRef.current = nextMode;
+    setMode(nextMode);
+    setLoading(false);
+    setErrorMessage('');
+    setResult(null);
+
+    const saved = await loadDailyAgentResult(nextMode);
+    if (modeRef.current !== nextMode) return;
+    setResult(saved);
+  }
+
+  async function handleGenerate() {
+    if (loading) return;
+    await generate(settings, modeRef.current, false);
   }
 
   const cloudReady =
@@ -113,6 +135,8 @@ export function DailyAgentScreen() {
         return (
           <Pressable
             key={item}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
             onPress={() => void switchMode(item)}
             style={({ pressed }) => [
               styles.modeButton,
@@ -231,15 +255,15 @@ export function DailyAgentScreen() {
             label={loading ? '生成中' : result ? `重新生成${modeLabel(mode)}` : `生成${modeLabel(mode)}`}
             icon={mode === 'plan' ? 'calendar-refresh-outline' : 'book-refresh-outline'}
             disabled={loading || !cloudReady}
-            onPress={() => void generate()}
+            onPress={() => void handleGenerate()}
             style={{ marginTop: 16 }}
           />
         </TechPanel>
       ) : (
-        <View style={[styles.classicPanel, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}>
+        <View style={[styles.classicPanel, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}> 
           {loading ? <View style={styles.loadingRow}><ActivityIndicator /><Text style={{ marginLeft: 10 }}>正在生成…</Text></View> : resultView}
           {errorMessage ? <Text style={{ marginTop: 10, color: theme.colors.error }}>{errorMessage}</Text> : null}
-          <Button mode="contained" icon="creation" loading={loading} disabled={loading || !cloudReady} onPress={() => void generate()} style={{ marginTop: 16 }}>
+          <Button mode="contained" icon="creation" loading={loading} disabled={loading || !cloudReady} onPress={() => void handleGenerate()} style={{ marginTop: 16 }}>
             {result ? `重新生成${modeLabel(mode)}` : `生成${modeLabel(mode)}`}
           </Button>
         </View>
