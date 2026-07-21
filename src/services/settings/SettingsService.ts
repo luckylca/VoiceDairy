@@ -9,7 +9,7 @@ import type {
 import { DEFAULT_SYSTEM_PROMPT } from '../llm/PromptBuilder';
 import { inferCloudModelProvider } from '../llm/CloudModelProviders';
 
-const SETTINGS_KEY = 'voicedairy.settings.v1';
+const SETTINGS_KEY = 'voicediary.settings.v1';
 const LEGACY_DEFAULT_CATEGORY_SIGNATURE = 'idea、todo、reminder、note、journal、question、project、unknown';
 const listeners = new Set<(settings: AppSettings) => void>();
 
@@ -37,6 +37,23 @@ export const defaultSettings: AppSettings = {
   persistentQuickRecordNotification: true,
   conflictDetectionEnabled: true,
 };
+
+let cachedSettings: AppSettings = defaultSettings;
+let settingsSnapshotReady = false;
+
+function publish(settings: AppSettings): AppSettings {
+  cachedSettings = settings;
+  settingsSnapshotReady = true;
+  return settings;
+}
+
+export function getSettingsSnapshot(): AppSettings {
+  return cachedSettings;
+}
+
+export function hasSettingsSnapshot(): boolean {
+  return settingsSnapshotReady;
+}
 
 function normalizeVisualStyle(value: unknown): VisualStyle {
   return value === 'tech' ? 'tech' : 'classic';
@@ -80,7 +97,7 @@ function normalizeTime(value: unknown, fallback: string): string {
 
 export async function loadSettings(): Promise<AppSettings> {
   const raw = await AsyncStorage.getItem(SETTINGS_KEY);
-  if (!raw) return defaultSettings;
+  if (!raw) return publish(defaultSettings);
 
   try {
     const saved = JSON.parse(raw) as Partial<AppSettings>;
@@ -91,7 +108,7 @@ export async function loadSettings(): Promise<AppSettings> {
         : saved.systemPrompt;
     const apiBaseUrl = typeof saved.apiBaseUrl === 'string' ? saved.apiBaseUrl : defaultSettings.apiBaseUrl;
 
-    return {
+    return publish({
       ...defaultSettings,
       ...saved,
       cloudModelProvider: normalizeCloudModelProvider(saved.cloudModelProvider, apiBaseUrl),
@@ -117,13 +134,14 @@ export async function loadSettings(): Promise<AppSettings> {
       dailyReviewTime: normalizeTime(saved.dailyReviewTime, defaultSettings.dailyReviewTime),
       persistentQuickRecordNotification: saved.persistentQuickRecordNotification !== false,
       conflictDetectionEnabled: saved.conflictDetectionEnabled !== false,
-    };
+    });
   } catch {
-    return defaultSettings;
+    return publish(defaultSettings);
   }
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
+  publish(settings);
   await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   listeners.forEach(listener => listener(settings));
 }
