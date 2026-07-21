@@ -10,7 +10,10 @@ import { TechTapEffectsProvider } from '../components/tech/TechTapEffectsProvide
 import { techTokens } from '../theme/tech/tokens';
 import { prewarmAsr } from '../services/asr/AsrService';
 import { loadSettings, subscribeSettings } from '../services/settings/SettingsService';
-import { syncDailyNotifications } from '../services/notifications/DailyNotificationService';
+import {
+  bootstrapDailyNotifications,
+  syncDailyNotifications,
+} from '../services/notifications/DailyNotificationService';
 import { openMainTab } from '../navigation/MainTabController';
 import { requestQuickRecordStart } from '../services/records/QuickRecordCommandService';
 
@@ -27,11 +30,14 @@ function AppContent() {
   const { isTech } = useVisualStyle();
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const asrTimer = setTimeout(() => {
       void prewarmAsr({ numThreads: 2, language: 'auto' });
     }, 850);
 
-    void loadSettings().then(settings => syncDailyNotifications(settings, false));
+    const notificationTimer = setTimeout(() => {
+      void loadSettings().then(bootstrapDailyNotifications);
+    }, 1200);
+
     const unsubscribeSettings = subscribeSettings(settings => {
       void syncDailyNotifications(settings, false);
     });
@@ -40,7 +46,8 @@ function AppContent() {
     const linkingSubscription = Linking.addEventListener('url', event => handleAppUrl(event.url));
 
     return () => {
-      clearTimeout(timer);
+      clearTimeout(asrTimer);
+      clearTimeout(notificationTimer);
       unsubscribeSettings();
       linkingSubscription.remove();
     };
