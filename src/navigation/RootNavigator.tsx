@@ -1,9 +1,14 @@
 import React, { useMemo } from 'react';
-import { NavigationContainer, type Theme as NavigationTheme } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  type LinkingOptions,
+  type Theme as NavigationTheme,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BottomTabs } from './BottomTabs';
 import type { RootStackParamList } from './types';
 import { VoiceInputScreen } from '../screens/VoiceInputScreen';
+import { DailyAgentScreen } from '../screens/DailyAgentScreen';
 import { PromptSettingsScreen } from '../screens/PromptSettingsScreen';
 import { LocalModelSettingsScreen } from '../screens/LocalModelSettingsScreen';
 import { LocalModelChatScreen } from '../screens/LocalModelChatScreen';
@@ -20,6 +25,20 @@ import { techTokens } from '../theme/tech/tokens';
 import { TechScreen } from '../components/tech/TechScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: ['voicediary://'],
+  config: {
+    screens: {
+      DailyAgent: {
+        path: 'daily',
+        parse: {
+          mode: value => (value === 'review' ? 'review' : 'plan'),
+        },
+      },
+    },
+  },
+};
 
 function withAdaptiveTechScreen<P extends object>(Component: React.ComponentType<P>) {
   function AdaptiveTechRoute(props: P) {
@@ -38,6 +57,7 @@ function withAdaptiveTechScreen<P extends object>(Component: React.ComponentType
 }
 
 const VoiceInputRoute = withAdaptiveTechScreen(VoiceInputScreen);
+const DailyAgentRoute = withAdaptiveTechScreen(DailyAgentScreen);
 const PromptSettingsRoute = withAdaptiveTechScreen(PromptSettingsScreen);
 const LocalModelSettingsRoute = withAdaptiveTechScreen(LocalModelSettingsScreen);
 const LocalModelChatRoute = withAdaptiveTechScreen(LocalModelChatScreen);
@@ -78,7 +98,7 @@ export function RootNavigator() {
           : 'slide_from_right';
 
   return (
-    <NavigationContainer theme={navigationTheme}>
+    <NavigationContainer theme={navigationTheme} linking={linking}>
       <Stack.Navigator
         screenOptions={{
           animation: isTech ? techAnimation : 'simple_push',
@@ -104,6 +124,7 @@ export function RootNavigator() {
       >
         <Stack.Screen name="MainTabs" component={BottomTabs} options={{ headerShown: false }} />
         <Stack.Screen name="VoiceInput" component={VoiceInputRoute} options={{ title: '新建记录' }} />
+        <Stack.Screen name="DailyAgent" component={DailyAgentRoute} options={{ title: '每日行动中心' }} />
         <Stack.Screen name="PromptSettings" component={PromptSettingsRoute} options={{ title: '整理提示词' }} />
         <Stack.Screen name="LocalModelSettings" component={LocalModelSettingsRoute} options={{ title: '本地模型管理' }} />
         <Stack.Screen name="LocalModelChat" component={LocalModelChatRoute} options={{ title: '本地模型对话' }} />
