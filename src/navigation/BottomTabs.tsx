@@ -1,12 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import {
-  LayoutAnimation,
-  Platform,
-  Pressable,
-  StyleSheet,
-  UIManager,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PagerView from 'react-native-pager-view';
 import { Icon, Text, TouchableRipple, useTheme } from 'react-native-paper';
@@ -21,10 +14,8 @@ import { useVisualStyle } from '../theme/VisualStyleProvider';
 import { techTokens } from '../theme/tech/tokens';
 
 const LAST_MAIN_TAB_KEY = 'voicediary.navigation.last-main-tab.v1';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+const FORWARD_PREVIEW_THRESHOLD = 0.06;
+const BACKWARD_PREVIEW_THRESHOLD = 0.94;
 
 type TabDefinition = {
   name: MainTabName;
@@ -40,21 +31,6 @@ const tabs: TabDefinition[] = [
   { name: 'agent', label: 'Agent', activeIcon: 'message-processing', inactiveIcon: 'message-processing-outline', code: 'AI' },
   { name: 'settings', label: '设置', activeIcon: 'cog', inactiveIcon: 'cog-outline', code: 'SYS' },
 ];
-
-const TAB_LAYOUT_ANIMATION = {
-  duration: 140,
-  create: {
-    type: LayoutAnimation.Types.easeInEaseOut,
-    property: LayoutAnimation.Properties.opacity,
-  },
-  update: {
-    type: LayoutAnimation.Types.easeInEaseOut,
-  },
-  delete: {
-    type: LayoutAnimation.Types.easeInEaseOut,
-    property: LayoutAnimation.Properties.opacity,
-  },
-};
 
 const ClassicTab = memo(function ClassicTab({
   tab,
@@ -163,34 +139,55 @@ function ScreenSlot({ active, children }: { active: boolean; children: React.Rea
 
 export function BottomTabs() {
   const theme = useTheme();
-  const { isTech, motion, motionLevel } = useVisualStyle();
+  const { isTech, motionLevel } = useVisualStyle();
   const pagerRef = useRef<PagerView>(null);
   const activeIndexRef = useRef(0);
-  const programmaticTargetRef = useRef<number | null>(null);
+  const dragOriginRef = useRef(0);
+  const draggingRef = useRef(false);
+  const pagingRef = useRef(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [visualIndex, setVisualIndex] = useState(0);
+  const [paging, setPaging] = useState(false);
+
+  const setPagingState = useCallback((value: boolean) => {
+    pagingRef.current = value;
+    setPaging(previous => (previous === value ? previous : value));
+  }, []);
+
+  const setVisualIndexSafe = useCallback((index: number) => {
+    if (index < 0 || index >= tabs.length) return;
+    setVisualIndex(previous => (previous === index ? previous : index));
+  }, []);
 
   const commitIndex = useCallback(
     (index: number, persist = true) => {
-      if (index < 0 || index >= tabs.length || index === activeIndexRef.current) return;
-      if (motion.entrances) LayoutAnimation.configureNext(TAB_LAYOUT_ANIMATION);
+      if (index < 0 || index >= tabs.length) return;
+      const changed = index !== activeIndexRef.current;
       activeIndexRef.current = index;
-      setActiveIndex(index);
-      if (persist) {
+      dragOriginRef.current = index;
+      setActiveIndex(previous => (previous === index ? previous : index));
+      setVisualIndexSafe(index);
+      if (changed && persist) {
         void AsyncStorage.setItem(LAST_MAIN_TAB_KEY, tabs[index]?.name ?? 'record');
       }
     },
-    [motion.entrances],
+    [setVisualIndexSafe],
   );
 
   const openPage = useCallback(
     (index: number, animate = motionLevel !== 'off') => {
       if (index < 0 || index >= tabs.length) return;
-      programmaticTargetRef.current = index;
+      // Update the bottom bar before asking the native pager to animate.
+      setVisualIndexSafe(index);
       commitIndex(index);
-      if (animate) pagerRef.current?.setPage(index);
-      else pagerRef.current?.setPageWithoutAnimation(index);
+      if (animate) {
+        setPagingState(true);
+        pagerRef.current?.setPage(index);
+      } else {
+        pagerRef.current?.setPageWithoutAnimation(index);
+      }
     },
-    [commitIndex, motionLevel],
+    [commitIndex, motionLevel, setPagingState, setVisualIndexSafe],
   );
 
   useEffect(() => {
@@ -212,7 +209,6 @@ export function BottomTabs() {
 
       if (targetIndex > 0) {
         requestAnimationFrame(() => {
-          programmaticTargetRef.current = targetIndex;
           commitIndex(targetIndex, false);
           pagerRef.current?.setPageWithoutAnimation(targetIndex);
         });
@@ -228,37 +224,51 @@ export function BottomTabs() {
         ref={pagerRef}
         style={styles.pagesContainer}
         initialPage={0}
-        offscreenPageLimit={3}
+        offscreenPageLimit={1}
         overdrag={false}
         onPageScrollStateChanged={event => {
-          if (event.nativeEvent.pageScrollState === 'dragging') {
-            programmaticTargetRef.current = null;
-          }
-        }}
-        onPageSelected={event => {
-          const position = event.nativeEvent.position;
-          const target = programmaticTargetRef.current;
-          if (target !== null) {
-            if (position === target) {
-              programmaticTargetRef.current = null;
-              commitIndex(position);
-            }
+          const state = event.nativeEvent.pageScrollState;
+          if (state === 'dragging') {
+            draggingRef.current = true;
+            dragOriginRef.current = activeIndexRef.current;
+            setPagingState(true);
             return;
           }
-          commitIndex(position);
+          if (state === 'idle') {
+            draggingRef.current = false;
+            setPagingState(false);
+            setVisualIndexSafe(activeIndexRef.current);
+          }
+        }}
+        onPageScroll={event => {
+          if (!draggingRef.current) return;
+          const { position, offset } = event.nativeEvent;
+          const origin = dragOriginRef.current;
+          let preview = origin;
+
+          if (origin === position && offset > FORWARD_PREVIEW_THRESHOLD) {
+            preview = Math.min(tabs.length - 1, origin + 1);
+          } else if (origin === position + 1 && offset < BACKWARD_PREVIEW_THRESHOLD) {
+            preview = Math.max(0, origin - 1);
+          }
+          setVisualIndexSafe(preview);
+        }}
+        onPageSelected={event => {
+          commitIndex(event.nativeEvent.position);
+          if (!draggingRef.current) setPagingState(false);
         }}
       >
         <View key="record" collapsable={false} style={styles.page}>
-          <ScreenSlot active={activeIndex === 0}><QuickRecordScreen /></ScreenSlot>
+          <ScreenSlot active={activeIndex === 0 && !paging}><QuickRecordScreen /></ScreenSlot>
         </View>
         <View key="timeline" collapsable={false} style={styles.page}>
-          <ScreenSlot active={activeIndex === 1}><HomeScreen /></ScreenSlot>
+          <ScreenSlot active={activeIndex === 1 && !paging}><HomeScreen /></ScreenSlot>
         </View>
         <View key="agent" collapsable={false} style={styles.page}>
-          <ScreenSlot active={activeIndex === 2}><AgentScreen /></ScreenSlot>
+          <ScreenSlot active={activeIndex === 2 && !paging}><AgentScreen /></ScreenSlot>
         </View>
         <View key="settings" collapsable={false} style={styles.page}>
-          <ScreenSlot active={activeIndex === 3}><SettingsScreen /></ScreenSlot>
+          <ScreenSlot active={activeIndex === 3 && !paging}><SettingsScreen /></ScreenSlot>
         </View>
       </PagerView>
 
@@ -272,9 +282,9 @@ export function BottomTabs() {
       >
         {tabs.map((tab, index) =>
           isTech ? (
-            <TechTab key={tab.name} tab={tab} focused={activeIndex === index} onPress={() => openPage(index)} />
+            <TechTab key={tab.name} tab={tab} focused={visualIndex === index} onPress={() => openPage(index)} />
           ) : (
-            <ClassicTab key={tab.name} tab={tab} focused={activeIndex === index} onPress={() => openPage(index)} />
+            <ClassicTab key={tab.name} tab={tab} focused={visualIndex === index} onPress={() => openPage(index)} />
           ),
         )}
       </View>
@@ -386,12 +396,12 @@ const styles = StyleSheet.create({
   },
   techCode: {
     marginTop: 1,
-    color: 'rgba(143,168,181,0.33)',
+    color: 'rgba(143,168,181,0.42)',
     fontSize: 6,
     fontWeight: '900',
-    letterSpacing: 0.7,
+    letterSpacing: 0.55,
   },
   techCodeFocused: {
-    color: 'rgba(85,217,255,0.58)',
+    color: techTokens.colors.primary,
   },
 });
