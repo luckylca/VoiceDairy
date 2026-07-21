@@ -11,25 +11,32 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.sqrt
 
 /**
  * Records microphone audio as 16 kHz mono PCM 16-bit samples.
  *
- * The React Native JS layer never receives audio frames. It only receives final
- * status events and the final transcription result from SherpaAsrModule.
+ * A throttled normalized amplitude value is emitted for UI animation. Raw PCM
+ * stays native and is never sent across the React Native bridge.
  */
-class PcmRecorder(private val reactContext: ReactApplicationContext) {
+class PcmRecorder(
+    private val reactContext: ReactApplicationContext,
+    private val onAmplitude: (Double) -> Unit = {},
+) {
     companion object {
         const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+        private const val AMPLITUDE_INTERVAL_MS = 120L
+        private const val AMPLITUDE_SAMPLE_STRIDE = 4
     }
 
     private val isRecording = AtomicBoolean(false)
     private var audioRecord: AudioRecord? = null
     private var worker: Thread? = null
-    private var pcmBuffer = ByteArrayOutputStream()
+    private var pcmBuffer = ByteArrayOutputStream(32 * 1024)
     private var startedAtMs = 0L
+    private var lastAmplitudeAtMs = 0L
 
     fun hasRecordPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
@@ -47,8 +54,9 @@ class PcmRecorder(private val reactContext: ReactApplicationContext) {
             throw IllegalStateException("录音已经在进行中")
         }
 
-        pcmBuffer = ByteArrayOutputStream()
+        pcmBuffer = ByteArrayOutputStream(32 * 1024)
         startedAtMs = System.currentTimeMillis()
+        lastAmplitudeAtMs = 0L
 
         val minBufferSize = AudioRecord.getMinBufferSize(
             SAMPLE_RATE,
@@ -61,7 +69,7 @@ class PcmRecorder(private val reactContext: ReactApplicationContext) {
             throw IllegalStateException("无法创建 AudioRecord：无效的最小缓冲区大小 $minBufferSize")
         }
 
-        val readBufferSize = minBufferSize.coerceAtLeast(SAMPLE_RATE / 2)
+        val readBufferSize = minBufferSize.coerceAtLeast(4096)
         val recorder = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
             SAMPLE_RATE,
@@ -88,6 +96,15 @@ class PcmRecorder(private val reactContext: ReactApplicationContext) {
                         synchronized(pcmBuffer) {
                             pcmBuffer.write(readBuffer, 0, read)
                         }
+
+                        val now = System.currentTimeMillis()
+                        if (now - lastAmplitudeAtMs >= AMPLITUDE_INTERVAL_MS) {
+                            lastAmplitudeAtMs = now
+                            val amplitude = calculateNormalizedAmplitude(readBuffer, read)
+                            reactContext.runOnJSQueueThread {
+                                onAmplitude(amplitude)
+                            }
+                        }
                     }
                 }
             } finally {
@@ -97,9 +114,13 @@ class PcmRecorder(private val reactContext: ReactApplicationContext) {
                     // Ignore stop failures while releasing resources.
                 }
                 recorder.release()
+                reactContext.runOnJSQueueThread {
+                    onAmplitude(0.0)
+                }
             }
-        }, "VoiceDairy-PcmRecorder")
+        }, "VoiceDiary-PcmRecorder")
 
+        worker?.priority = Thread.NORM_PRIORITY + 1
         worker?.start()
     }
 
@@ -136,6 +157,36 @@ class PcmRecorder(private val reactContext: ReactApplicationContext) {
         audioRecord = null
         worker = null
         pcmBuffer.reset()
+        reactContext.runOnJSQueueThread {
+            onAmplitude(0.0)
+        }
+    }
+
+    private fun calculateNormalizedAmplitude(bytes: ByteArray, validBytes: Int): Double {
+        val evenByteCount = validBytes - validBytes % 2
+        if (evenByteCount <= 0) return 0.0
+
+        var sumSquares = 0.0
+        var peak = 0.0
+        var sampleCount = 0
+        var index = 0
+        val byteStride = 2 * AMPLITUDE_SAMPLE_STRIDE
+
+        while (index + 1 < evenByteCount) {
+            val low = bytes[index].toInt() and 0xFF
+            val high = bytes[index + 1].toInt() shl 8
+            val sample = (high or low).toShort().toInt()
+            val normalized = kotlin.math.abs(sample.toDouble()) / 32768.0
+            sumSquares += normalized * normalized
+            if (normalized > peak) peak = normalized
+            sampleCount += 1
+            index += byteStride
+        }
+
+        if (sampleCount == 0) return 0.0
+        val rms = sqrt(sumSquares / sampleCount)
+        val combined = (rms * 3.2 + peak * 0.45).coerceIn(0.0, 1.0)
+        return ((combined - 0.018) / 0.32).coerceIn(0.0, 1.0)
     }
 
     private fun pcm16BytesToFloatSamples(bytes: ByteArray): FloatArray {

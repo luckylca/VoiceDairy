@@ -5,6 +5,10 @@ import { listProjects } from '../database/ProjectRepository';
 import { buildSystemPrompt, buildUserPrompt } from './PromptBuilder';
 import { parseAndValidateLlmJson } from './JsonRepair';
 import { organizeTextLocally } from './LocalModelService';
+import {
+  getCloudProviderPreset,
+  resolveCloudBaseUrl,
+} from './CloudModelProviders';
 
 export type OrganizeTextOptions = {
   text: string;
@@ -16,18 +20,23 @@ function normalizeApiBaseUrl(value: string): string {
     .trim()
     .replace(/\/+$/, '')
     .replace(/\/chat\/completions$/i, '')
+    .replace(/\/messages$/i, '')
     .replace(/\/models$/i, '');
 }
 
-function buildApiHeaders(apiKey: string): Record<string, string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+function buildOpenAiHeaders(apiKey: string): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const trimmedKey = apiKey.trim();
-  if (trimmedKey) {
-    headers.Authorization = `Bearer ${trimmedKey}`;
-  }
+  if (trimmedKey) headers.Authorization = `Bearer ${trimmedKey}`;
   return headers;
+}
+
+function buildAnthropicHeaders(apiKey: string): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    'x-api-key': apiKey.trim(),
+    'anthropic-version': '2023-06-01',
+  };
 }
 
 function extractModelIds(payload: unknown): string[] {
@@ -56,12 +65,16 @@ function extractModelIds(payload: unknown): string[] {
 }
 
 export async function fetchAvailableModels(settings: AppSettings): Promise<string[]> {
-  const baseUrl = normalizeApiBaseUrl(settings.apiBaseUrl);
+  const preset = getCloudProviderPreset(settings.cloudModelProvider);
+  const baseUrl = normalizeApiBaseUrl(resolveCloudBaseUrl(settings));
   if (!baseUrl) throw new Error('请先填写 API Base URL');
 
   const response = await fetch(`${baseUrl}/models`, {
     method: 'GET',
-    headers: buildApiHeaders(settings.apiKey),
+    headers:
+      preset.protocol === 'anthropic'
+        ? buildAnthropicHeaders(settings.apiKey)
+        : buildOpenAiHeaders(settings.apiKey),
   });
 
   if (!response.ok) {
@@ -74,34 +87,72 @@ export async function fetchAvailableModels(settings: AppSettings): Promise<strin
   return models;
 }
 
-async function organizeTextWithCloud(
+function extractAnthropicText(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return '';
+  const content = (payload as Record<string, unknown>).content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map(block => {
+      if (!block || typeof block !== 'object') return '';
+      const record = block as Record<string, unknown>;
+      return record.type === 'text' && typeof record.text === 'string' ? record.text : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+async function organizeTextWithAnthropic(
   text: string,
   settings: AppSettings,
   projects: ProjectItem[],
+  baseUrl: string,
 ): Promise<LlmOrganizeResult> {
-  if (!settings.apiBaseUrl.trim() || !settings.modelName.trim()) {
-    throw new Error('请先在设置中填写云端 API 地址和模型名');
-  }
-
-  const baseUrl = normalizeApiBaseUrl(settings.apiBaseUrl);
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const response = await fetch(`${baseUrl}/messages`, {
     method: 'POST',
-    headers: buildApiHeaders(settings.apiKey),
+    headers: buildAnthropicHeaders(settings.apiKey),
     body: JSON.stringify({
       model: settings.modelName,
+      max_tokens: 4096,
       temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content: buildSystemPrompt(settings.systemPrompt, undefined, projects),
-        },
-        {
-          role: 'user',
-          content: buildUserPrompt(text),
-        },
-      ],
+      system: buildSystemPrompt(settings.systemPrompt, undefined, projects),
+      messages: [{ role: 'user', content: buildUserPrompt(text) }],
     }),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Claude 请求失败：${response.status} ${message}`);
+  }
+
+  const content = extractAnthropicText(await response.json());
+  if (!content) throw new Error('Claude 返回格式异常：缺少文本内容');
+  return parseAndValidateLlmJson(content);
+}
+
+async function organizeTextWithOpenAiCompatible(
+  text: string,
+  settings: AppSettings,
+  projects: ProjectItem[],
+  baseUrl: string,
+): Promise<LlmOrganizeResult> {
+  const preset = getCloudProviderPreset(settings.cloudModelProvider);
+  const body: Record<string, unknown> = {
+    model: settings.modelName,
+    temperature: 0.2,
+    messages: [
+      {
+        role: 'system',
+        content: buildSystemPrompt(settings.systemPrompt, undefined, projects),
+      },
+      { role: 'user', content: buildUserPrompt(text) },
+    ],
+  };
+  if (preset.jsonMode) body.response_format = { type: 'json_object' };
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: buildOpenAiHeaders(settings.apiKey),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -115,6 +166,22 @@ async function organizeTextWithCloud(
     throw new Error('大模型返回格式异常：缺少 message.content');
   }
   return parseAndValidateLlmJson(content);
+}
+
+async function organizeTextWithCloud(
+  text: string,
+  settings: AppSettings,
+  projects: ProjectItem[],
+): Promise<LlmOrganizeResult> {
+  const preset = getCloudProviderPreset(settings.cloudModelProvider);
+  const baseUrl = normalizeApiBaseUrl(resolveCloudBaseUrl(settings));
+  if (!baseUrl || !settings.modelName.trim()) {
+    throw new Error('请先在设置中选择供应商并填写模型名');
+  }
+
+  return preset.protocol === 'anthropic'
+    ? organizeTextWithAnthropic(text, settings, projects, baseUrl)
+    : organizeTextWithOpenAiCompatible(text, settings, projects, baseUrl);
 }
 
 export async function organizeText(options: OrganizeTextOptions): Promise<LlmOrganizeResult> {

@@ -18,7 +18,7 @@ class MainActivity : ReactActivity(), DisplayManager.DisplayListener {
         requestHighestRefreshRate()
     }
 
-    override fun getMainComponentName(): String = "VoiceDairy"
+    override fun getMainComponentName(): String = "VoiceDiary"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -140,6 +140,6 @@ class MainActivity : ReactActivity(), DisplayManager.DisplayListener {
     private fun formatRate(rate: Float): String = String.format("%.1f", rate)
 
     companion object {
-        private const val REFRESH_LOG_TAG = "VoiceDairyRefresh"
+        private const val REFRESH_LOG_TAG = "VoiceDiaryRefresh"
     }
 }

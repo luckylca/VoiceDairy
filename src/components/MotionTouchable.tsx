@@ -1,6 +1,8 @@
 import React, { useRef } from 'react';
-import { Animated, Pressable, StyleProp, ViewStyle } from 'react-native';
+import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useTheme } from 'react-native-paper';
+import { useVisualStyle } from '../theme/VisualStyleProvider';
+import { techTokens } from '../theme/tech/tokens';
 
 function withAlpha(color: string, alpha: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(color) ? `${color}${alpha}` : color;
@@ -32,20 +34,11 @@ export function MotionTouchable({
   rippleColor,
 }: MotionTouchableProps) {
   const theme = useTheme();
-  const scale = useRef(new Animated.Value(1)).current;
+  const { isTech, motion } = useVisualStyle();
   const longPressed = useRef(false);
 
-  function animate(toValue: number, duration: number) {
-    scale.stopAnimation();
-    Animated.timing(scale, {
-      toValue,
-      duration,
-      useNativeDriver: true,
-    }).start();
-  }
-
   return (
-    <Animated.View style={[style, { transform: [{ scale }] }]}>
+    <View style={style}>
       <Pressable
         onPress={() => {
           if (!longPressed.current) onPress?.();
@@ -58,27 +51,32 @@ export function MotionTouchable({
         delayLongPress={delayLongPress}
         onPressIn={() => {
           longPressed.current = false;
-          animate(0.992, 55);
         }}
-        onPressOut={() => animate(1, 95)}
         disabled={disabled || (!onPress && !onLongPress)}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         android_ripple={{
-          color: rippleColor ?? withAlpha(theme.colors.primary, '2E'),
+          color:
+            rippleColor ??
+            (isTech ? 'rgba(85,217,255,0.17)' : withAlpha(theme.colors.primary, '2E')),
           borderless: false,
           foreground: true,
         }}
-        style={[
+        style={({ pressed }) => [
           {
             borderRadius,
             overflow: 'hidden',
+            shadowColor: isTech ? techTokens.colors.primary : undefined,
+            shadowOpacity: isTech && motion.decorative ? 0.05 : 0,
+            shadowRadius: isTech ? 5 : 0,
+            opacity: pressed ? 0.88 : 1,
+            transform: [{ scale: pressed && motion.pressFeedback ? (isTech ? 0.982 : 0.994) : 1 }],
           },
           contentStyle,
         ]}
       >
         {children}
       </Pressable>
-    </Animated.View>
+    </View>
   );
 }

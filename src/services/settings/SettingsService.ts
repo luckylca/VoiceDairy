@@ -1,12 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { AppSettings } from '../../types/settings';
+import type {
+  AppSettings,
+  CloudModelProvider,
+  MotionLevel,
+  StartupPage,
+  VisualStyle,
+} from '../../types/settings';
 import { DEFAULT_SYSTEM_PROMPT } from '../llm/PromptBuilder';
+import { inferCloudModelProvider } from '../llm/CloudModelProviders';
 
-const SETTINGS_KEY = 'voicedairy.settings.v1';
+const SETTINGS_KEY = 'voicediary.settings.v1';
 const LEGACY_DEFAULT_CATEGORY_SIGNATURE = 'idea、todo、reminder、note、journal、question、project、unknown';
 const listeners = new Set<(settings: AppSettings) => void>();
 
 export const defaultSettings: AppSettings = {
+  cloudModelProvider: 'openai',
   apiBaseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   modelName: 'gpt-4o-mini',
@@ -17,13 +25,79 @@ export const defaultSettings: AppSettings = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   themeMode: 'system',
   colorSeed: '#6750A4',
+  visualStyle: 'classic',
+  motionLevel: 'standard',
+  startupPage: 'quick_record',
+  autoOrganizeAfterRecognition: false,
+  agentAutoSendVoice: false,
+  dailyPlanEnabled: false,
+  dailyPlanTime: '08:00',
+  dailyReviewEnabled: false,
+  dailyReviewTime: '21:30',
+  persistentQuickRecordNotification: true,
+  conflictDetectionEnabled: true,
 };
+
+let cachedSettings: AppSettings = defaultSettings;
+let settingsSnapshotReady = false;
+
+function publish(settings: AppSettings): AppSettings {
+  cachedSettings = settings;
+  settingsSnapshotReady = true;
+  return settings;
+}
+
+export function getSettingsSnapshot(): AppSettings {
+  return cachedSettings;
+}
+
+export function hasSettingsSnapshot(): boolean {
+  return settingsSnapshotReady;
+}
+
+function normalizeVisualStyle(value: unknown): VisualStyle {
+  return value === 'tech' ? 'tech' : 'classic';
+}
+
+function normalizeMotionLevel(value: unknown): MotionLevel {
+  return value === 'full' || value === 'reduced' || value === 'off' ? value : 'standard';
+}
+
+function normalizeStartupPage(value: unknown): StartupPage {
+  return value === 'last_page' || value === 'agent' ? value : 'quick_record';
+}
+
+function normalizeCloudModelProvider(value: unknown, baseUrl: string): CloudModelProvider {
+  const allowed: CloudModelProvider[] = [
+    'openai',
+    'deepseek',
+    'anthropic',
+    'minimax',
+    'zhipu',
+    'moonshot',
+    'aliyun',
+    'custom',
+  ];
+  return allowed.includes(value as CloudModelProvider)
+    ? (value as CloudModelProvider)
+    : inferCloudModelProvider(baseUrl);
+}
+
+function normalizeTime(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return fallback;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return fallback;
+  }
+  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+}
 
 export async function loadSettings(): Promise<AppSettings> {
   const raw = await AsyncStorage.getItem(SETTINGS_KEY);
-  if (!raw) {
-    return defaultSettings;
-  }
+  if (!raw) return publish(defaultSettings);
 
   try {
     const saved = JSON.parse(raw) as Partial<AppSettings>;
@@ -32,10 +106,13 @@ export async function loadSettings(): Promise<AppSettings> {
       saved.systemPrompt.includes(LEGACY_DEFAULT_CATEGORY_SIGNATURE)
         ? DEFAULT_SYSTEM_PROMPT
         : saved.systemPrompt;
+    const apiBaseUrl = typeof saved.apiBaseUrl === 'string' ? saved.apiBaseUrl : defaultSettings.apiBaseUrl;
 
-    return {
+    return publish({
       ...defaultSettings,
       ...saved,
+      cloudModelProvider: normalizeCloudModelProvider(saved.cloudModelProvider, apiBaseUrl),
+      apiBaseUrl,
       organizerProvider: saved.organizerProvider === 'local' ? 'local' : 'cloud',
       localModelContextSize:
         typeof saved.localModelContextSize === 'number' && saved.localModelContextSize >= 1024
@@ -46,13 +123,25 @@ export async function loadSettings(): Promise<AppSettings> {
           ? saved.localModelGpuLayers
           : defaultSettings.localModelGpuLayers,
       systemPrompt: systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
-    };
+      visualStyle: normalizeVisualStyle(saved.visualStyle),
+      motionLevel: normalizeMotionLevel(saved.motionLevel),
+      startupPage: normalizeStartupPage(saved.startupPage),
+      autoOrganizeAfterRecognition: saved.autoOrganizeAfterRecognition === true,
+      agentAutoSendVoice: saved.agentAutoSendVoice === true,
+      dailyPlanEnabled: saved.dailyPlanEnabled === true,
+      dailyPlanTime: normalizeTime(saved.dailyPlanTime, defaultSettings.dailyPlanTime),
+      dailyReviewEnabled: saved.dailyReviewEnabled === true,
+      dailyReviewTime: normalizeTime(saved.dailyReviewTime, defaultSettings.dailyReviewTime),
+      persistentQuickRecordNotification: saved.persistentQuickRecordNotification !== false,
+      conflictDetectionEnabled: saved.conflictDetectionEnabled !== false,
+    });
   } catch {
-    return defaultSettings;
+    return publish(defaultSettings);
   }
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
+  publish(settings);
   await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   listeners.forEach(listener => listener(settings));
 }

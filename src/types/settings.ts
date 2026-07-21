@@ -1,7 +1,20 @@
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type OrganizerProvider = 'cloud' | 'local';
+export type CloudModelProvider =
+  | 'openai'
+  | 'deepseek'
+  | 'anthropic'
+  | 'minimax'
+  | 'zhipu'
+  | 'moonshot'
+  | 'aliyun'
+  | 'custom';
+export type VisualStyle = 'classic' | 'tech';
+export type MotionLevel = 'full' | 'standard' | 'reduced' | 'off';
+export type StartupPage = 'quick_record' | 'last_page' | 'agent';
 
 export type AppSettings = {
+  cloudModelProvider: CloudModelProvider;
   apiBaseUrl: string;
   apiKey: string;
   modelName: string;
@@ -15,4 +28,15 @@ export type AppSettings = {
   webdavPassword?: string;
   themeMode: ThemeMode;
   colorSeed: string;
+  visualStyle: VisualStyle;
+  motionLevel: MotionLevel;
+  startupPage: StartupPage;
+  autoOrganizeAfterRecognition: boolean;
+  agentAutoSendVoice: boolean;
+  dailyPlanEnabled: boolean;
+  dailyPlanTime: string;
+  dailyReviewEnabled: boolean;
+  dailyReviewTime: string;
+  persistentQuickRecordNotification: boolean;
+  conflictDetectionEnabled: boolean;
 };
