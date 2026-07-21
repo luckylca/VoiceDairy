@@ -1,4 +1,5 @@
 import type { ConfigurableCategoryType } from '../types/category';
+import type { DailyAgentMode } from '../types/dailyAgent';
 
 export type RootTabParamList = {
   Record: undefined;
@@ -10,6 +11,7 @@ export type RootTabParamList = {
 export type RootStackParamList = {
   MainTabs: undefined;
   VoiceInput: undefined;
+  DailyAgent: { mode?: DailyAgentMode } | undefined;
   PromptSettings: undefined;
   LocalModelSettings: undefined;
   LocalModelChat: undefined;
